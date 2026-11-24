@@ -5,6 +5,10 @@ import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  // Also expose the public values the Vercel ↔ Supabase integration creates
+  // (NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY / _PUBLISHABLE_KEY). Only the
+  // NEXT_PUBLIC_SUPABASE_ prefix is added: secret keys never reach the browser.
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_SUPABASE_'],
   plugins: [
     react(),
     VitePWA({

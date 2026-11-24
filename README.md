@@ -65,6 +65,8 @@ Online play uses **Supabase Realtime** (Broadcast + Presence) only. There are **
 
 That is the whole backend.
 
+**Shortcut on Vercel:** instead of steps 1–5 you can add the **Supabase integration** from your Vercel project (Storage / Integrations → Supabase). It creates `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (or `…_PUBLISHABLE_KEY`), and the app reads those too, so nothing else needs to be set. Only the `NEXT_PUBLIC_SUPABASE_*` values reach the browser; the integration's secret/service-role keys are never bundled. Redeploy after connecting it. Step 4 (Realtime enabled, public channels allowed) still applies.
+
 Things to know about the free tier (as documented by Supabase at the time of writing; check their pricing page for current numbers):
 
 - **Free projects are paused after about a week without activity.** If rooms suddenly stop connecting, open the Supabase dashboard and press **Restore project**. Local modes are unaffected.
