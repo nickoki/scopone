@@ -20,6 +20,10 @@ export type GuestPhase = 'connecting' | 'notFound' | 'lobby' | 'playing' | 'clos
 export interface GuestSnapshot {
   role: 'guest';
   status: TransportStatus;
+  /** Last connection error reported by the server, if any. */
+  error: string | null;
+  /** True once we have been trying to connect for a while without success. */
+  slow: boolean;
   phase: GuestPhase;
   hostOnline: boolean;
   lobby: Lobby | null;
@@ -29,6 +33,10 @@ export interface GuestSnapshot {
 }
 
 const HOST_WAIT_MS = 7000;
+/** After this long without a connection, show what is going on instead of a spinner. */
+const SLOW_MS = 9000;
+/** Repeat our hello until the host has answered (a broadcast can be missed). */
+const HELLO_EVERY_MS = 2500;
 
 export class GuestSession {
   readonly role = 'guest' as const;
@@ -36,6 +44,8 @@ export class GuestSession {
   private snapshot: GuestSnapshot = {
     role: 'guest',
     status: 'connecting',
+    error: null,
+    slow: false,
     phase: 'connecting',
     hostOnline: false,
     lobby: null,
@@ -46,6 +56,8 @@ export class GuestSession {
   private host: PresenceMeta | null = null;
   private key: CryptoKey | null = null;
   private findTimer: ReturnType<typeof setTimeout> | null = null;
+  private slowTimer: ReturnType<typeof setTimeout> | null = null;
+  private helloTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
   private gameId = 0;
 
@@ -68,18 +80,30 @@ export class GuestSession {
   }
 
   start(): void {
+    this.startTimers();
     this.transport.join(
       this.code,
       { id: this.identity.id, name: this.name, pub: this.identity.pub, host: false },
       {
-        onStatus: (status) => {
-          this.set({ status });
+        onStatus: (status, detail) => {
+          this.set({ status, error: status === 'connected' ? null : (detail ?? this.snapshot.error) });
           if (status === 'connected') this.armNotFound();
         },
         onPresence: (list) => void this.onPresence(list),
         onMessage: (event, payload) => void this.onMessage(event, payload),
       },
     );
+  }
+
+  private startTimers(): void {
+    this.slowTimer = setTimeout(() => {
+      if (!this.closed && this.snapshot.lobby === null) this.set({ slow: true });
+    }, SLOW_MS);
+    this.helloTimer = setInterval(() => {
+      if (this.closed || this.snapshot.lobby !== null || !this.snapshot.hostOnline) return;
+      const hello: HelloMsg = { from: this.identity.id };
+      this.transport.send('hello', hello);
+    }, HELLO_EVERY_MS);
   }
 
   private armNotFound(): void {
@@ -160,6 +184,8 @@ export class GuestSession {
   leave(forget = true): void {
     this.closed = true;
     if (this.findTimer) clearTimeout(this.findTimer);
+    if (this.slowTimer) clearTimeout(this.slowTimer);
+    if (this.helloTimer) clearInterval(this.helloTimer);
     if (forget) removeKey(KEYS.guestRoom);
     this.transport.leave();
   }

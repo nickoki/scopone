@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { AI_LEVELS } from '../../ai/types';
 import { unlockAudio } from '../../audio/sound';
 import { isRoomCode, loadIdentity, makeRoomCode, normalizeRoomCode } from '../../online/crypto';
@@ -215,6 +215,7 @@ function LobbyView({
   myId,
   host,
   status,
+  problem,
   onLeave,
   leaveLabel,
 }: {
@@ -222,6 +223,7 @@ function LobbyView({
   myId: string;
   host: HostSession | null;
   status: string | null;
+  problem?: ReactNode;
   onLeave: () => void;
   leaveLabel: string;
 }) {
@@ -279,6 +281,7 @@ function LobbyView({
           </button>
         </div>
         {status && <p className="warn soft">{status}</p>}
+        {problem}
 
         <section className="section">
           <h2>{t.online.seatsTitle}</h2>
@@ -373,6 +376,24 @@ function LobbyView({
   );
 }
 
+function ConnectionProblem({ error }: { error: string | null }) {
+  const t = useT();
+  return (
+    <div className="warn conn-problem">
+      <p>
+        <b>{t.online.cantConnect}</b>
+      </p>
+      <p>{t.online.cantConnectHint}</p>
+      {error && (
+        <details>
+          <summary>{t.online.details}</summary>
+          <code>{error}</code>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function RoomTag({ code }: { code: string }) {
   const t = useT();
   return (
@@ -407,6 +428,7 @@ function HostView({ session, onSuspend, onClose }: { session: HostSession; onSus
         myId={snap.lobby.hostId}
         host={session}
         status={snap.status === 'connected' ? null : snap.status === 'connecting' ? t.online.connecting : t.online.reconnecting}
+        problem={snap.status !== 'connected' && snap.error ? <ConnectionProblem error={snap.error} /> : null}
         onLeave={() => setConfirmClose(true)}
         leaveLabel={t.online.closeRoom}
       />
@@ -452,8 +474,15 @@ function GuestView({ session, onLeave }: { session: GuestSession; onLeave: (forg
       />
     );
   }
+  const stuck = snap.phase === 'connecting' && snap.status !== 'connected' && (snap.slow || snap.error !== null);
   const message =
-    snap.phase === 'closed' ? t.online.closed : snap.phase === 'notFound' ? t.online.notFound : t.online.connecting;
+    snap.phase === 'closed'
+      ? t.online.closed
+      : snap.phase === 'notFound'
+        ? t.online.notFound
+        : snap.status === 'connected' && snap.hostOnline
+          ? t.online.waitingHostReply
+          : t.online.connecting;
   return (
     <div className="screen">
       <ScreenHeader title={t.online.title} onBack={() => onLeave(snap.phase !== 'connecting')} />
@@ -462,7 +491,11 @@ function GuestView({ session, onLeave }: { session: GuestSession; onLeave: (forg
           <small>{t.online.roomCode}</small>
           <strong>{session.code}</strong>
         </div>
-        <p className={snap.phase === 'connecting' ? 'waiting' : 'warn'}>{message}</p>
+        {stuck ? (
+          <ConnectionProblem error={snap.error} />
+        ) : (
+          <p className={snap.phase === 'connecting' ? 'waiting' : 'warn'}>{message}</p>
+        )}
         <button type="button" className="btn wide" onClick={() => onLeave(true)}>
           {t.common.back}
         </button>

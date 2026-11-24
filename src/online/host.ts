@@ -42,6 +42,8 @@ export interface SavedHostRoom {
 export interface HostSnapshot {
   role: 'host';
   status: TransportStatus;
+  /** Last connection error reported by the server, if any. */
+  error: string | null;
   lobby: Lobby;
   match: MatchState | null;
   mySeat: Seat | null;
@@ -93,7 +95,7 @@ export class HostSession {
       players: [],
     };
     lobby.players = [{ id: identity.id, name, online: true, host: true }];
-    this.snapshot = { role: 'host', status: 'connecting', lobby, match: restore?.match ?? null, mySeat: null, thinking: null };
+    this.snapshot = { role: 'host', status: 'connecting', error: null, lobby, match: restore?.match ?? null, mySeat: null, thinking: null };
     this.snapshot.mySeat = this.seatOf(identity.id);
   }
 
@@ -130,8 +132,8 @@ export class HostSession {
       this.snapshot.lobby.code,
       { id: this.identity.id, name: this.name, pub: this.identity.pub, host: true },
       {
-        onStatus: (status) => {
-          this.set({ status });
+        onStatus: (status, detail) => {
+          this.set({ status, error: status === 'connected' ? null : (detail ?? this.snapshot.error) });
           if (status === 'connected') this.broadcastLobby();
         },
         onPresence: (list) => void this.onPresence(list),

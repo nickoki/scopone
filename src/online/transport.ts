@@ -17,7 +17,8 @@ export type TransportStatus = 'connecting' | 'connected' | 'disconnected';
 export interface TransportHandlers {
   onMessage: (event: string, payload: unknown) => void;
   onPresence: (peers: PresenceMeta[]) => void;
-  onStatus: (status: TransportStatus) => void;
+  /** `detail` carries the server's reason when the connection fails. */
+  onStatus: (status: TransportStatus, detail?: string) => void;
 }
 
 export interface Transport {
@@ -39,8 +40,9 @@ export type TransportKind = 'supabase' | 'local';
 function supabaseConfig(): { url: string; key: string } | null {
   const env = import.meta.env;
   const url = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+  // The newer publishable key first: projects can have their legacy anon key disabled.
   const key =
-    env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   return url && key ? { url, key } : null;
 }
 

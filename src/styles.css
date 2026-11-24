@@ -1966,3 +1966,24 @@ p {
     animation-duration: 0.01s;
   }
 }
+
+.conn-problem {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.conn-problem details summary {
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.conn-problem code {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
