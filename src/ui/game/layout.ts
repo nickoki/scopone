@@ -77,7 +77,8 @@ export function computeGeometry(W: number, H: number, reserve = 0): Geometry {
       { x: 6 + (ch * otherScale) / 2, y: midY },
     ],
     pile: [
-      { x: W - 8 - (cw * pileScale) / 2, y: table.y + table.h - (ch * pileScale) / 2 - 16 },
+      // ours: at the right end of the action row, next to our hand
+      { x: W - 8 - (cw * pileScale) / 2, y: H - handZone - actionH / 2 },
       { x: 8 + (cw * pileScale) / 2, y: 6 + (ch * pileScale) / 2 },
     ],
     handY,

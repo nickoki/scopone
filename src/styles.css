@@ -1250,11 +1250,36 @@ p {
   z-index: 1;
 }
 
+.pile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ours: in the action row, label to the left of the stack */
 .pile-0 {
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 5px;
+}
+
+.pile-0 .pile-info {
   align-items: flex-end;
+  max-width: 50px;
+}
+
+.pile-0 .pile-label {
+  margin-top: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pile-1 {
+  align-items: flex-start;
+}
+
+.pile-1 .pile-info {
   align-items: flex-start;
 }
 
@@ -1468,6 +1493,142 @@ p {
 
 .action-bar > * {
   pointer-events: auto;
+}
+
+/* Keep clear of our capture pile at the right end of the row. */
+.action-bar {
+  padding: 0 94px;
+}
+
+.action-bar.choosing {
+  padding: 0 94px 0 8px;
+  justify-content: flex-end;
+}
+
+.me-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.me-col .status {
+  min-height: 24px;
+  padding: 2px 12px;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.me-col .status span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- each player's most recent action (replaced on their next turn) ---- */
+
+.last-action {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(20, 10, 5, 0.55);
+  animation: la-pop 0.35s var(--ease) both;
+  pointer-events: none;
+}
+
+.last-action.row {
+  justify-content: flex-start;
+  align-content: flex-start;
+  background: none;
+  padding: 0;
+}
+
+.last-action.me {
+  position: static;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  padding: 2px 5px;
+  overflow: hidden;
+}
+
+.la-played,
+.la-taken {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.last-action.col .la-played {
+  flex-basis: 100%;
+}
+
+.last-action.me .la-played,
+.last-action.me .la-taken {
+  flex-wrap: nowrap;
+}
+
+.la-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 3px 0 4px;
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 19px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.la-chip b {
+  font-weight: 800;
+}
+
+.la-chip.taken {
+  background: #ffe9a8;
+  box-shadow: inset 0 0 0 1.5px var(--gold);
+}
+
+.la-arrow {
+  color: var(--gold-bright);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.la-scopa {
+  flex-basis: 100%;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.1;
+  color: var(--gold-bright);
+}
+
+.last-action.me .la-scopa {
+  flex-basis: auto;
+}
+
+@keyframes la-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.12);
+  }
 }
 
 .status {

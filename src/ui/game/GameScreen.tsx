@@ -8,6 +8,7 @@ import {
   rankOf,
   teamOf,
   type CardId,
+  type PlayedMove,
   type Seat,
   type Team,
 } from '../../engine';
@@ -18,6 +19,7 @@ import { Icon, IconButton, Modal, Segmented, Toggle } from '../common';
 import { HowTo } from '../HowTo';
 import { Board, type BoardMarks } from './Board';
 import { HandEndDialog, LastTrickDialog, MatchEndDialog, ScoreboardDialog } from './Dialogs';
+import { LastAction } from './LastAction';
 import { computeGeometry } from './layout';
 import { CardChip } from './MiniCards';
 
@@ -92,7 +94,9 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
     unlockAudio();
     if (!canAct) return;
     if (card === selected) {
-      play();
+      // A second tap puts the card back; playing always goes through the button.
+      playSound('select');
+      setSelected(null);
       return;
     }
     playSound('select');
@@ -122,6 +126,16 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
     }
     return { cap: [...cap], sweep: [...sweep] };
   }, [ctl.tutorial, canAct, hand, perspective]);
+
+  // Each player's most recent action in this hand (only the latest one per seat is shown).
+  const lastBySeat = useMemo(() => {
+    const out: ({ move: PlayedMove; n: number } | null)[] = [null, null, null, null];
+    hand.history.forEach((move, n) => {
+      out[move.seat] = { move, n };
+    });
+    if (ctl.anim) out[ctl.anim.move.seat] = { move: ctl.anim.move, n: hand.history.length };
+    return out;
+  }, [hand.history, ctl.anim]);
 
   const marks: BoardMarks = {
     selected,
@@ -223,17 +237,23 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
               const w = g.cw * g.pileScale;
               const h = g.ch * g.pileScale;
               return (
-                <div key={k} className={`pile pile-${k}`} style={{ left: p.x - w / 2, top: p.y - h / 2, width: w }}>
+                <div
+                  key={k}
+                  className={`pile pile-${k}`}
+                  style={k === 0 ? { right: g.W - p.x - w / 2, top: p.y - h / 2 } : { left: p.x - w / 2, top: p.y - h / 2 }}
+                >
                   <div className={`pile-stack${count === 0 ? ' empty' : ''}`} style={{ width: w, height: h }}>
                     {count > 0 && <CardBack style={settings.cardStyle} />}
                     <span className="pile-count">{count}</span>
                   </div>
-                  <span className="pile-label">{usThem ? teamNames[team] : team === 0 ? 'A' : 'B'}</span>
-                  {hand.scope[team] > 0 && (
-                    <span className="pile-scope" title={t.game.scopeShort}>
-                      {t.game.scopeShort} {hand.scope[team]}
-                    </span>
-                  )}
+                  <div className="pile-info">
+                    <span className="pile-label">{usThem ? teamNames[team] : team === 0 ? 'A' : 'B'}</span>
+                    {hand.scope[team] > 0 && (
+                      <span className="pile-scope" title={t.game.scopeShort}>
+                        {t.game.scopeShort} {hand.scope[team]}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -263,6 +283,32 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                     <b>{hand.hands[seat]!.length}</b>
                   </span>
                 </div>
+              );
+            })}
+
+            {/* what each of them did on their last turn */}
+            {[1, 2, 3].map((r) => {
+              const seat = (perspective + r) & 3;
+              const last = lastBySeat[seat];
+              if (!last) return null;
+              const c = g.seat[r]!;
+              const colW = g.ch * g.otherScale + 6;
+              const style =
+                r === 2
+                  ? { left: g.W / 2 + 78, right: 6, top: 4 }
+                  : r === 1
+                    ? { right: 3, top: c.y + 62, width: colW }
+                    : { left: 3, top: c.y + 62, width: colW };
+              return (
+                <LastAction
+                  key={`${seat}-${last.n}`}
+                  move={last.move}
+                  cardStyle={settings.cardStyle}
+                  scopaLabel={t.game.scopa}
+                  label={t.game.lastActionOf(names[seat]!)}
+                  variant={r === 2 ? 'row' : 'col'}
+                  style={style}
+                />
               );
             })}
 
@@ -297,7 +343,10 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
             )}
 
             {/* action bar */}
-            <div className="action-bar" style={{ bottom: g.handZone, height: g.actionH }}>
+            <div
+              className={`action-bar${canAct && selected !== null ? ' choosing' : ''}`}
+              style={{ bottom: g.handZone, height: g.actionH }}
+            >
               {canAct && selected !== null ? (
                 <>
                   {options.length > 1 && (
@@ -321,10 +370,22 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                   </button>
                 </>
               ) : (
-                <div className={`status${canAct ? ' mine' : ''}`}>
-                  {hand.dealer === perspective && view.phase === 'playing' && <i className="tag dealer">M</i>}
-                  <span>{status}</span>
-                  {ctl.spectator && <small>{t.game.spectating}</small>}
+                <div className="me-col">
+                  {lastBySeat[perspective] && (
+                    <LastAction
+                      key={lastBySeat[perspective]!.n}
+                      move={lastBySeat[perspective]!.move}
+                      cardStyle={settings.cardStyle}
+                      scopaLabel={t.game.scopa}
+                      label={t.game.lastActionOf(names[perspective]!)}
+                      variant="me"
+                    />
+                  )}
+                  <div className={`status${canAct ? ' mine' : ''}`}>
+                    {hand.dealer === perspective && view.phase === 'playing' && <i className="tag dealer">M</i>}
+                    <span>{status}</span>
+                    {ctl.spectator && <small>{t.game.spectating}</small>}
+                  </div>
                 </div>
               )}
             </div>
