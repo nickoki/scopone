@@ -22,21 +22,22 @@ import {
   type ScoreCategory,
   type Seat,
 } from '../engine';
-import { factsFor, isConcrete, praiseFor, reasonsFor } from './facts';
+import { candidatesFor, explainedLimit, factsFor, praiseFor, reasonsFrom } from './facts';
 import { moveIndices, positionBefore, positionOf, type Decision } from './positions';
 import {
   BRILLIANT_MARGIN,
   EVEN_SPREAD,
   GOOD_LIMIT,
-  UNEXPLAINED_CAP,
+  MATCH_DECIDED,
   accuracyOf,
   classCounts,
   classOf,
   creditedLoss,
   handScore,
+  limitedLoss,
   weightOf,
 } from './scoring';
-import type { HandReview, MoveOption, MoveReview } from './types';
+import type { AnalysedMove, AnalysedOption, HandReview, MoveReview } from './types';
 
 export interface AnalysisBudget {
   /** Deals played for every legal move. */
@@ -161,7 +162,7 @@ export function analysePosition(
   budget: AnalysisBudget = DEFAULT_BUDGET,
   /** The match score before this hand (public). With it, a move is not blamed for points that do not cost the match. */
   scores?: readonly [number, number],
-): MoveReview {
+): AnalysedMove {
   const seat = played.seat;
   const view: HandState = {
     ...pos,
@@ -185,7 +186,7 @@ export function analysePosition(
     seat: seat as Seat,
     hand: view.hands[seat]!.slice(),
     table: view.table.slice(),
-    since: view.history.slice(from),
+    since: view.history.slice(from).map(({ seat: who, card, captured, scopa }) => ({ seat: who, card, captured, scopa })),
   };
 
   const all = moves.map((_, i) => i);
@@ -248,7 +249,7 @@ export function analysePosition(
   const drawn = sampler.deals.count;
   // One model for the odds: the share of the evaluation's own deals in which the next player holds the rank.
   const nextHolds = (rank: number) => (drawn > 0 ? sampler.deals.nextHolds[rank]! / drawn : pNextHas(kn, rank));
-  const option = (i: number): MoveOption => {
+  const option = (i: number): AnalysedOption => {
     const n = sampler.playoutValues[i]!.length;
     const cats = {} as Record<ScoreCategory, number>;
     for (const c of SCORE_CATEGORIES) cats[c] = round3(n > 0 ? sampler.categorySums[i]![c] / n : 0);
@@ -260,7 +261,8 @@ export function analysePosition(
       move: moves[i]!,
       ev: round3(ev(i)),
       delta: 0 - round3(Math.max(0, behind.d)),
-      even: i === best || (exhaustive ? behind.d < 0.005 : behind.d <= 2 * behind.se),
+      // For the move played, "too small to count" is exactly "nothing is held against it".
+      even: i === best || (i === playedIdx ? verdict.credited === 0 : exhaustive ? behind.d < 0.005 : behind.d <= 2 * behind.se),
       samples: values[i]!.length,
       byCategory: n > 0 ? cats : null,
       near:
@@ -304,11 +306,14 @@ export function analysePosition(
     carte: Math.max(view.captured[0].length, view.captured[1].length) >= 21,
     denari: Math.max(view.captured[0].filter(isDenari).length, view.captured[1].filter(isDenari).length) >= 6,
   };
-  // When this hand can decide the match, what counts is winning it, not the margin: a move that is not
-  // behind any rival in how often the match is won is charged at most as 'good'.
+  // When this hand decides the match (it ends here in nearly every possible deal, whichever of the two moves
+  // is played), what counts is winning it, not the margin: a move that is not behind any rival in how often
+  // the match is won is charged at most as 'good'. In any other hand the match usually goes on and every
+  // point lost still counts, so the guard does not apply.
   let matchSafe = false;
   const mv = sampler.matchValues;
-  if (mv && credited > GOOD_LIMIT && contenders.some((c) => mv[c]!.some((v) => v !== 0))) {
+  const decides = (c: number) => (mv && mv[c]!.length > 0 ? mv[c]!.reduce((n, v) => n + (v !== 0 ? 1 : 0), 0) / mv[c]!.length : 0);
+  if (mv && credited > GOOD_LIMIT && Math.min(decides(playedIdx), decides(best)) >= MATCH_DECIDED) {
     const behind = contenders.some((c) => {
       if (c === playedIdx) return false;
       const g = paired(mv[c]!, mv[playedIdx]!);
@@ -319,9 +324,14 @@ export function analysePosition(
       matchSafe = true;
     }
   }
-  let reasons = credited > 0 ? reasonsFor(options[playedPos]!, options[0]!, decided, credited) : [];
-  // No harsh verdict on the simulation's word alone: it needs a reason that can be shown.
-  if (credited > UNEXPLAINED_CAP && !reasons.some(isConcrete)) credited = UNEXPLAINED_CAP;
+  // No harsh verdict on the simulation's word alone: the loss charged is limited to what the concrete,
+  // showable reasons can account for.
+  const candidates = credited > 0 ? candidatesFor(options[playedPos]!, options[0]!, decided) : [];
+  const limited = limitedLoss(credited, explainedLimit(candidates));
+  // Worth telling the player only when it changes the mark (a blunder limited to a slightly smaller blunder is not).
+  const capped = accuracyOf(limited) - accuracyOf(credited) >= 5;
+  credited = limited;
+  let reasons = credited > 0 ? reasonsFrom(candidates, options[playedPos]!, options[0]!, credited) : [];
   let cls = classOf(credited);
 
   if (cls === 'best') {
@@ -334,9 +344,10 @@ export function analysePosition(
       // by both judges, and beyond doubt
       if (Math.min(g.d - 2 * g.se, h.d - 2 * h.se) >= BRILLIANT_MARGIN) cls = 'brilliant';
     } else if (obviousIdx >= 0 && obviousIdx !== playedIdx) {
-      // The obvious move was dropped after the first batch for being far behind.
+      // The obvious move was dropped after the first batch for being far behind: compared on those deals, by both judges.
       const g = paired(values[playedIdx]!, values[obviousIdx]!);
-      if (g.d - 2 * g.se >= BRILLIANT_MARGIN) cls = 'brilliant';
+      const h = paired(sampler.playoutValues[playedIdx]!, sampler.playoutValues[obviousIdx]!);
+      if (Math.min(g.d - 2 * g.se, h.d - 2 * h.se) >= BRILLIANT_MARGIN) cls = 'brilliant';
     }
     reasons = stake >= 0.4 || cls === 'brilliant' ? praiseFor(options[playedPos]!, options) : [];
   }
@@ -355,6 +366,7 @@ export function analysePosition(
     cls,
     reasons,
     ...(matchSafe ? { matchSafe: true } : null),
+    ...(capped ? { capped: true } : null),
   };
 }
 
@@ -362,7 +374,7 @@ export function analysePosition(
  * Analyse one decision from the only data the analysis may see (see
  * `Decision`). This is what the worker runs. Null if the record is inconsistent.
  */
-export function analyseDecision(d: Decision, rules: Rules, scores?: readonly [number, number], budget?: AnalysisBudget): MoveReview | null {
+export function analyseDecision(d: Decision, rules: Rules, scores?: readonly [number, number], budget?: AnalysisBudget): AnalysedMove | null {
   const pos = positionOf(d, rules);
   return pos ? analysePosition(pos, rules, d.played, d.index, budget, scores) : null;
 }
@@ -379,7 +391,7 @@ export function analyseMove(
   index: number,
   budget?: AnalysisBudget,
   scores?: readonly [number, number],
-): MoveReview | null {
+): AnalysedMove | null {
   const played = hand.history[index];
   if (!played) return null;
   const pos = positionBefore(hand, rules, played.seat, index);

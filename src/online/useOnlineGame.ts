@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { viewFor, type MatchState, type Move, type Seat } from '../engine';
 import { TIMINGS, useDisplay } from '../game/useDisplay';
 import type { GameController, ReadyGate, SeatInfo } from '../game/types';
@@ -19,6 +19,17 @@ function readyGate(latest: MatchState, flags: boolean[], seat: Seat | null, sett
   return { seats: flags, canReady: settled && seat !== null && !flags[seat] };
 }
 
+/**
+ * Which game each state belongs to. What is on screen (`display.shown`) can lag behind the newest state -
+ * after a rematch it still shows the end of the previous match for a moment - so the key that names the
+ * game for the move reviews must come from the state shown, not from the newest one.
+ */
+function useGameOf(latest: MatchState | null, gameId: number): (shown: MatchState) => number {
+  const games = useRef(new WeakMap<MatchState, number>()).current;
+  if (latest && !games.has(latest)) games.set(latest, gameId);
+  return (shown) => games.get(shown) ?? gameId;
+}
+
 /** Game controller for the device hosting the room. Null until a match exists. */
 export function useHostController(session: HostSession, speed: Speed, t: Dict): GameController | null {
   const snap = useSyncExternalStore(session.subscribe, session.getSnapshot);
@@ -26,6 +37,7 @@ export function useHostController(session: HostSession, speed: Speed, t: Dict): 
   const { match, mySeat, lobby } = snap;
   const latest = useMemo(() => (match ? viewFor(match, mySeat === null ? [] : [mySeat]) : null), [match, mySeat]);
   const display = useDisplay(latest, TIMINGS[speed]);
+  const gameOf = useGameOf(latest, lobby.gameId);
   const play = useCallback((move: Move) => session.play(move), [session]);
   const next = useCallback(() => session.nextHand(), [session]);
   const readyUp = useCallback(() => session.readyUp(), [session]);
@@ -63,7 +75,7 @@ export function useHostController(session: HostSession, speed: Speed, t: Dict): 
     spectator: mySeat === null,
     ready,
     readyUp,
-    gameKey: `host:${lobby.gameId}`,
+    gameKey: `host:${gameOf(view)}`,
     reviewSeats,
     scopa: display.scopa,
   };
@@ -74,6 +86,7 @@ export function useGuestController(session: GuestSession, speed: Speed, t: Dict)
   const snap = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const [tutorial, setTutorial] = useState(false);
   const display = useDisplay(snap.view, TIMINGS[speed]);
+  const gameOf = useGameOf(snap.view, snap.gameId);
   const play = useCallback((move: Move) => void session.play(move), [session]);
   const readyUp = useCallback(() => void session.ready(), [session]);
   const noop = useCallback(() => undefined, []);
@@ -109,7 +122,7 @@ export function useGuestController(session: GuestSession, speed: Speed, t: Dict)
     spectator: seat === null,
     ready,
     readyUp,
-    gameKey: `guest:${snap.gameId}:${seat ?? 'x'}`,
+    gameKey: `guest:${gameOf(view)}:${seat ?? 'x'}`,
     reviewSeats,
     scopa: display.scopa,
   };

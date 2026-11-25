@@ -20,6 +20,16 @@ export function saveJson(key: string, value: unknown): boolean {
   }
 }
 
+/** Save text that is already serialised (so its size can be checked first). */
+export function saveText(key: string, text: string): boolean {
+  try {
+    globalThis.localStorage?.setItem(key, text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function removeKey(key: string): void {
   try {
     globalThis.localStorage?.removeItem(key);

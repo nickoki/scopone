@@ -43,6 +43,19 @@ export const WEIGHT_MAX = 1.5;
  */
 export const UNEXPLAINED_CAP = 0.4;
 
+/**
+ * A reason must account for at least this share of the loss charged: put the
+ * other way round, a move is never charged more than 1/EXPLAINED_SHARE times
+ * what its concrete reasons account for (when that is above UNEXPLAINED_CAP).
+ */
+export const EXPLAINED_SHARE = 1 / 3;
+
+/**
+ * The hand "decides the match" for the purposes of the match guard when the
+ * match ends with this hand in at least this share of the possible deals.
+ */
+export const MATCH_DECIDED = 0.9;
+
 /** Below this, the gap between the best and the worst legal move is nothing: the decision is not scored. */
 export const EVEN_SPREAD = 0.05;
 
@@ -57,6 +70,17 @@ export const BRILLIANT_MARGIN = 0.5;
  */
 export function creditedLoss(loss: number, se: number): number {
   return Math.max(0, loss - Math.max(NOISE_FLOOR, se));
+}
+
+/**
+ * No harsh verdict on the simulation's word alone: beyond UNEXPLAINED_CAP the
+ * loss charged is limited to what the concrete, showable reasons can account
+ * for (`explained`, see `explainedLimit` in facts.ts). It is a limit, not a
+ * switch, so with the same facts a larger measured loss is never charged less
+ * than a smaller one.
+ */
+export function limitedLoss(credited: number, explained: number): number {
+  return credited <= UNEXPLAINED_CAP ? credited : Math.min(credited, Math.max(UNEXPLAINED_CAP, explained));
 }
 
 export function accuracyOf(credited: number): number {

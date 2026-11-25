@@ -2361,6 +2361,17 @@ p {
   height: 36px;
 }
 
+.rv-hands .icon-btn:disabled {
+  opacity: 0.3;
+}
+
+.rv-for {
+  margin: 6px 0 -2px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
 .rv-flip {
   display: inline-block;
   transform: scaleX(-1);
@@ -2737,6 +2748,31 @@ p {
 }
 
 @media (max-height: 700px) {
+  /* Short screens: a compact accuracy line, so the running total stays in view above it. */
+  .hand-end-foot .accuracy-block {
+    margin-top: 6px;
+    gap: 6px;
+  }
+  .hand-end-foot .accuracy-row {
+    padding: 4px 8px 4px 6px;
+    gap: 10px;
+    border-radius: 12px;
+  }
+  .hand-end-foot .score-ring {
+    width: 40px;
+    height: 40px;
+  }
+  .hand-end-foot .accuracy-cta {
+    display: none;
+  }
+  .hand-end-foot .btn,
+  .hand-end-foot .note {
+    margin-top: 8px;
+  }
+  .hand-end .score-table td {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
   .hand-end .running-team .big {
     font-size: 30px;
   }

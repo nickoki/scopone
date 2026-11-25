@@ -50,14 +50,16 @@ export function IconButton({
   label,
   onClick,
   active,
+  disabled,
 }: {
   icon: IconName;
   label: string;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <button type="button" className={`icon-btn${active ? ' active' : ''}`} aria-label={label} title={label} onClick={onClick}>
+    <button type="button" className={`icon-btn${active ? ' active' : ''}`} aria-label={label} title={label} disabled={disabled} onClick={onClick}>
       <Icon name={icon} />
     </button>
   );

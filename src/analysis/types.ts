@@ -20,10 +20,14 @@ export interface OptionFacts {
   /** Coins among them. */
   denari: number;
   settebello: boolean;
-  /** Sevens among them (the best primiera cards). */
-  sevens: number;
+  /** The settebello is captured from the table (as opposed to being the card played from the hand). */
+  settebelloTaken: boolean;
+  /** Sevens other than the settebello captured from the table (the best primiera cards). */
+  sevensTaken: number;
   /** King of Coins, only when the Re bello rule is on. */
   reBello: boolean;
+  /** The Re bello is captured from the table. */
+  reBelloTaken: boolean;
   /** Ace, 2 and 3 of Coins among the cards won, only when the Napola rule is on. */
   napola: number;
   /** Total and number of cards left on the table after the move. */
@@ -71,6 +75,8 @@ export type Reason =
   | { code: 'nearSettebello'; pct: number; bestPct: number }
   | { code: 'missedNapola'; n: number }
   | { code: 'missedSettebello' }
+  // the best move captured with the settebello held in hand, putting it out of reach
+  | { code: 'bankSettebello' }
   | { code: 'laidSettebello'; pct: number; bestPct: number }
   | { code: 'missedReBello' }
   | { code: 'moreDenari'; n: number }
@@ -79,12 +85,15 @@ export type Reason =
   | { code: 'exposedCard'; pct: number; bestPct: number }
   | { code: 'category'; category: ScoreCategory; delta: number }
   | { code: 'longTerm' }
+  // follows a visible but small fact: most of the difference is not explained by it
+  | { code: 'restLater' }
   // said about a good move
   | { code: 'tookScopa' }
   | { code: 'tookSettebello' }
   | { code: 'keptSafe'; sum: number }
   | { code: 'leastRisk'; pct: number; otherPct: number };
 
+/** One legal move as the review shows it. */
 export interface MoveOption {
   move: Move;
   /** Expected points of the hand (own side minus the other) if this move is played. */
@@ -94,15 +103,29 @@ export interface MoveOption {
    * on (0 for the best move; never positive).
    */
   delta: number;
-  /** True when that difference is within the noise: the analysis cannot tell this move from the best. */
+  /**
+   * True when that difference is too small to count: within the noise for an alternative,
+   * and for the move played exactly when nothing is held against it.
+   */
   even: boolean;
   /** Deals this estimate is based on. */
   samples: number;
+}
+
+/**
+ * A legal move with the working data the explanations are built from. It
+ * exists only while a decision is being analysed: once the reasons have been
+ * worked out, the review keeps the plain `MoveOption` (see `slimReview`).
+ */
+export interface AnalysedOption extends MoveOption {
   /** The same expectation split by scoring category (from the playouts), when available. */
   byCategory: Record<ScoreCategory, number> | null;
   near: NearShares | null;
   facts: OptionFacts;
 }
+
+/** A play as the review lists it under "before your move". */
+export type SinceMove = Pick<PlayedMove, 'seat' | 'card' | 'captured' | 'scopa'>;
 
 /** The analysis of one decision. */
 export interface MoveReview {
@@ -113,7 +136,7 @@ export interface MoveReview {
   hand: CardId[];
   table: CardId[];
   /** What the other players did since this player's previous move. */
-  since: PlayedMove[];
+  since: SinceMove[];
   /** Every legal move, best first. */
   options: MoveOption[];
   /** Index (into `options`) of the move that was played. */
@@ -138,9 +161,24 @@ export interface MoveReview {
   even?: boolean;
   /**
    * The move gives up points on average but does not lower the chance of winning the match (which this hand
-   * could decide), so it is not charged beyond 'good'.
+   * decides), so it is not charged beyond 'good'.
    */
   matchSafe?: boolean;
+  /**
+   * The loss charged was limited because no concrete, showable reason accounts for the whole measured
+   * gap, and that made the mark better: `credited` is then well below the gap shown in the list of moves.
+   */
+  capped?: boolean;
+}
+
+/** A decision as it comes out of the analysis, with every option's working data still attached. */
+export interface AnalysedMove extends MoveReview {
+  options: AnalysedOption[];
+}
+
+/** What the app keeps and shows of an analysed decision: everything except the options' working data. */
+export function slimReview(review: AnalysedMove): MoveReview {
+  return { ...review, options: review.options.map(({ move, ev, delta, even, samples }) => ({ move, ev, delta, even, samples })) };
 }
 
 export interface HandReview {

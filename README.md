@@ -121,7 +121,7 @@ Good to know
 npm test
 ```
 
-120 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference), the online encryption, and the move analysis (positions rebuilt exactly as the player saw them, results unchanged when the hidden cards change, verdicts on clear-cut positions, the scoring arithmetic).
+128 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference), the online encryption, and the move analysis (positions rebuilt exactly as the player saw them, results unchanged when the hidden cards change, verdicts on clear-cut positions, the match-deciding guard, the scoring arithmetic) and how reviews are stored (several games side by side, size limits, damaged data).
 
 ```bash
 npm run simulate                       # 1,000 games per matchup
@@ -134,7 +134,7 @@ npm run accuracy                       # 40 hands per AI level
 npm run accuracy -- --hands 100
 ```
 
-The accuracy script plays hands with each AI level in the analysed seat and reviews them exactly as the app would. It checks that the score ranks the levels (Facile < Medio < Difficile), that every decision gets an **identical** analysis from the full game state, from the player's own masked view, with the other three hands shuffled, and from the finished hand (so nothing hidden can be influencing it), how much the numbers move when the same decisions are re-analysed with different random deals, and how long a decision takes. It exits non-zero if the ranking or the hidden-information check fails.
+The accuracy script plays hands with each AI level in the analysed seat and reviews them exactly as the app would. It checks that the score ranks the levels (Facile < Medio < Difficile), that every decision gets an **identical** analysis from the full game state, from the player's own masked view, with the other three hands shuffled, and from the finished hand (so nothing hidden can be influencing it), how much the numbers move when the same decisions are re-analysed with different random deals, and how long a decision takes. Hands are analysed with a running match score, as in the app, including scores at which the hand decides the match. It exits non-zero if the ranking or the hidden-information check fails.
 
 The simulator plays full matches headlessly, cycling through both variants and every rule toggle. After **every move** a checker written independently of the engine (brute-force capture enumeration, card conservation, turn order, scopa bookkeeping, re-computed hand scores and winner) verifies the result; any violation or crash makes the script exit non-zero. The latest results are recorded in DECISIONS.md.
 

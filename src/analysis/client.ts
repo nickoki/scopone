@@ -7,7 +7,7 @@
 import type { Rules } from '../engine';
 import { analyseDecision } from './analyze';
 import type { Decision } from './positions';
-import type { MoveReview } from './types';
+import { slimReview, type MoveReview } from './types';
 import type { AnalysisRequest, AnalysisResponse } from './worker';
 
 let worker: Worker | null = null;
@@ -47,7 +47,7 @@ export function requestAnalysis(decision: Decision, rules: Rules, scores: [numbe
       setTimeout(() => {
         try {
           const review = analyseDecision(decision, rules, scores);
-          if (review) resolve(review);
+          if (review) resolve(slimReview(review));
           else reject(new Error('inconsistent record'));
         } catch (err) {
           reject(err instanceof Error ? err : new Error(String(err)));

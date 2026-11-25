@@ -13,18 +13,24 @@
  *   3. How repeatable is it? The same hands are analysed again with different
  *      random deals and the scores compared.
  *   4. How long does one decision take?
+ *
+ * Every hand is analysed with a running match score, as in the app, cycling
+ * through an opening hand, mid-match scores and scores at which the hand
+ * decides the match.
  */
 import { fork } from 'node:child_process';
 import { cpus } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chooseMove, type AiLevel } from '../src/ai/index';
 import { analyseMove, analysePosition, summarise } from '../src/analysis/analyze';
+import { candidatesFor, explainedLimit } from '../src/analysis/facts';
 import { moveIndices, positionBefore } from '../src/analysis/positions';
 import { creditedLoss, handScore } from '../src/analysis/scoring';
 import { MOVE_CLASSES, type MoveClass, type MoveReview } from '../src/analysis/types';
 import {
   DEFAULT_RULES,
   createMatch,
+  isDenari,
   makeRng,
   playMove,
   shuffle,
@@ -48,8 +54,11 @@ interface Tally {
   leaks: string[];
   repeatMove: number[];
   repeatHand: number[];
-  /** Per hand, per scored decision: [credited loss before the cap, stake, 1 if it has a concrete reason]. */
-  raw: [number, number, number][][];
+  /** Per hand, per scored decision: [credited loss before the cap, stake, the most its concrete reasons can justify charging]. */
+  raw: [number, number, number | null][][];
+  /** Per starting score (index into STARTS): scored decisions, and those the match guard applied to. */
+  decisionsAt: number[];
+  guardedAt: number[];
   /** Decisions measured as costing at least 0.3 points: how many came with a concrete reason / were capped. */
   costly: number;
   explained: number;
@@ -61,6 +70,14 @@ function arg(name: string, fallback: number): number {
 }
 
 const HANDS = arg('hands', 40);
+/** Match scores before the hand (for a target of 21), cycled over the simulated hands. */
+const STARTS: [number, number][] = [
+  [0, 0],
+  [9, 7],
+  [15, 14],
+  [19, 12],
+  [12, 19],
+];
 const JOBS = Math.max(1, arg('jobs', Math.min(cpus().length, 8)));
 
 /** The same position with the cards of the three other players dealt differently. */
@@ -81,6 +98,8 @@ function playAndAnalyse(level: AiLevel, game: number, tally: Tally): void {
     napola: game % 8 === 5,
   };
   const seat = (game % 4) as Seat;
+  const start = STARTS[game % STARTS.length]!;
+  const scores: [number, number] = [Math.round((start[0] * rules.target) / 21), Math.round((start[1] * rules.target) / 21)];
   let m: MatchState = createMatch(rules, 50_000 + game * 13);
   const before: MatchState[] = [];
   let step = 0;
@@ -95,9 +114,10 @@ function playAndAnalyse(level: AiLevel, game: number, tally: Tally): void {
 
   const reviews: MoveReview[] = [];
   const again: MoveReview[] = [];
+  const limits: number[] = [];
   for (const index of moveIndices(m.hand, seat)) {
     const t0 = performance.now();
-    const fromEnd = analyseMove(m.hand, rules, index)!;
+    const fromEnd = analyseMove(m.hand, rules, index, undefined, scores)!;
     const ms = performance.now() - t0;
     reviews.push(fromEnd);
     if (fromEnd.cls !== 'forced') {
@@ -113,21 +133,31 @@ function playAndAnalyse(level: AiLevel, game: number, tally: Tally): void {
 
     // 2. no hidden information: three different sources, one answer
     const then = before[index]!;
-    const fromView = analyseMove(viewFor(playMove(then, { card: fromEnd.options[fromEnd.played]!.move.card, capture: fromEnd.options[fromEnd.played]!.move.capture }), [seat]).hand, rules, index);
+    const fromView = analyseMove(viewFor(playMove(then, { card: fromEnd.options[fromEnd.played]!.move.card, capture: fromEnd.options[fromEnd.played]!.move.capture }), [seat]).hand, rules, index, undefined, scores);
     const pos = positionBefore(m.hand, rules, seat, index)!;
+    if (fromEnd.cls !== 'forced') {
+      // What the concrete reasons can justify charging (as analysePosition works it out), for the what-if table.
+      const decided = {
+        carte: Math.max(pos.captured[0].length, pos.captured[1].length) >= 21,
+        denari: Math.max(pos.captured[0].filter(isDenari).length, pos.captured[1].filter(isDenari).length) >= 6,
+      };
+      limits[index] = fromEnd.matchSafe ? -1 : explainedLimit(candidatesFor(fromEnd.options[fromEnd.played]!, fromEnd.options[0]!, decided));
+      tally.decisionsAt[game % STARTS.length]!++;
+      if (fromEnd.matchSafe) tally.guardedAt[game % STARTS.length]!++;
+    }
     // The rebuilt position with the REAL cards of the other three put back in, and with those cards shuffled.
     const real: HandState = { ...pos, hands: pos.hands.map((h, i) => (i === seat ? h : then.hand.hands[i]!.slice())) };
-    const fromShuffled = analysePosition(shuffledOthers(real, seat, game * 7 + index), rules, m.hand.history[index]!, index);
-    const fromReal = analysePosition(real, rules, m.hand.history[index]!, index);
+    const fromShuffled = analysePosition(shuffledOthers(real, seat, game * 7 + index), rules, m.hand.history[index]!, index, undefined, scores);
+    const fromReal = analysePosition(real, rules, m.hand.history[index]!, index, undefined, scores);
     const key = JSON.stringify(fromEnd);
     if (JSON.stringify(fromView) !== key) tally.leaks.push(`game ${game} move ${index}: own view differs from finished hand`);
     if (JSON.stringify(fromShuffled) !== key) tally.leaks.push(`game ${game} move ${index}: result changes when hidden cards are shuffled`);
     if (JSON.stringify(fromReal) !== key) tally.leaks.push(`game ${game} move ${index}: result changes when given the real hidden cards`);
-    if (JSON.stringify(analysePosition(pos, rules, m.hand.history[index]!, index)) !== key) tally.leaks.push(`game ${game} move ${index}: not deterministic`);
+    if (JSON.stringify(analysePosition(pos, rules, m.hand.history[index]!, index, undefined, scores)) !== key) tally.leaks.push(`game ${game} move ${index}: not deterministic`);
 
     // 3. repeatability: same decision, different sampled deals (perturb the seed through the history order)
     if (fromEnd.cls !== 'forced') {
-      const other = analysePosition({ ...pos, table: [...pos.table].reverse(), hands: pos.hands.map((h, i) => (i === seat ? [...h].reverse() : h)) }, rules, m.hand.history[index]!, index);
+      const other = analysePosition({ ...pos, table: [...pos.table].reverse(), hands: pos.hands.map((h, i) => (i === seat ? [...h].reverse() : h)) }, rules, m.hand.history[index]!, index, undefined, scores);
       again.push(other);
       tally.repeatMove.push(Math.abs(other.accuracy - fromEnd.accuracy));
     } else again.push(fromEnd);
@@ -135,7 +165,8 @@ function playAndAnalyse(level: AiLevel, game: number, tally: Tally): void {
   tally.raw.push(
     reviews
       .filter((r) => r.cls !== 'forced')
-      .map((r) => [creditedLoss(r.loss, r.se), r.stake, r.reasons.some((x) => x.code !== 'category' && x.code !== 'longTerm') ? 1 : 0]),
+      // a decision the match guard applied to keeps the charge it got
+      .map((r) => (limits[r.index] === -1 ? [r.credited, r.stake, Infinity] : [creditedLoss(r.loss, r.se), r.stake, limits[r.index] ?? 0])),
   );
   const review = summarise(1, seat, reviews, reviews.length, true);
   if (review.score !== null) {
@@ -158,6 +189,8 @@ const newTally = (level: AiLevel): Tally => ({
   repeatMove: [],
   repeatHand: [],
   raw: [],
+  decisionsAt: STARTS.map(() => 0),
+  guardedAt: STARTS.map(() => 0),
   costly: 0,
   explained: 0,
 });
@@ -185,6 +218,10 @@ if (process.argv.includes('--shard')) {
           for (const k of ['scores', 'losses', 'ses', 'ms', 'leaks', 'repeatMove', 'repeatHand', 'raw'] as const) (sum[k] as unknown[]).push(...t[k]);
           for (const c of MOVE_CLASSES) sum.classes[c] += t.classes[c];
           sum.costly += t.costly;
+          STARTS.forEach((_, i) => {
+            sum.decisionsAt[i]! += t.decisionsAt[i]!;
+            sum.guardedAt[i]! += t.guardedAt[i]!;
+          });
           sum.explained += t.explained;
         });
         child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`shard ${shard} exited with ${code}`))));
@@ -212,12 +249,12 @@ if (process.argv.includes('--shard')) {
   const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
   const gauss = (sigma: number) => (l: number) => Math.exp(-((l / sigma) ** 2));
   const schemes: [string, (loss: number) => number, number][] = [
-    ['exp(-(loss/0.44)^2), unexplained losses capped at 0.3', gauss(0.44), 0.3],
-    ['exp(-(loss/0.44)^2), capped at 0.4', gauss(0.44), 0.4],
-    ['exp(-(loss/0.40)^2), capped at 0.4', gauss(0.4), 0.4],
-    ['exp(-(loss/0.35)^2), capped at 0.4', gauss(0.35), 0.4],
-    ['exp(-(loss/0.40)^2), no cap', gauss(0.4), Infinity],
-    ['exp(-loss/0.3), capped at 0.3', (l) => Math.exp(-l / 0.3), 0.3],
+    ['exp(-(loss/0.44)^2), unexplained losses limited to 0.3', gauss(0.44), 0.3],
+    ['exp(-(loss/0.44)^2), limited to 0.4', gauss(0.44), 0.4],
+    ['exp(-(loss/0.40)^2), limited to 0.4', gauss(0.4), 0.4],
+    ['exp(-(loss/0.35)^2), limited to 0.4', gauss(0.35), 0.4],
+    ['exp(-(loss/0.40)^2), no limit', gauss(0.4), Infinity],
+    ['exp(-loss/0.3), limited to 0.3', (l) => Math.exp(-l / 0.3), 0.3],
   ];
   for (const [name, acc, cap] of schemes) {
     const per = LEVELS.map((l) => {
@@ -227,8 +264,9 @@ if (process.argv.includes('--shard')) {
         .map((h) => {
           let sum = 0;
           let weight = 0;
-          for (const [uncapped, stake, concrete] of h) {
-            const credited = concrete ? uncapped : Math.min(uncapped, cap);
+          for (const [uncapped, stake, limit] of h) {
+            // null: JSON turned Infinity into null on its way from the worker process
+            const credited = limit === null ? uncapped : Math.min(uncapped, Math.max(cap, limit));
             const wt = clamp(Math.max(stake, credited), 0.2, 1.5);
             sum += wt * acc(credited);
             weight += wt;
@@ -242,7 +280,9 @@ if (process.argv.includes('--shard')) {
 
   const costly = all.reduce((n, t) => n + t.costly, 0);
   const explained = all.reduce((n, t) => n + t.explained, 0);
-  console.log(`\nExplanations: of ${costly} decisions measured as costing at least 0.3 points, ${explained} (${Math.round((100 * explained) / Math.max(1, costly))}%) came with a concrete reason; the rest are capped at an inaccuracy.`);
+  console.log(`\nExplanations: of ${costly} decisions measured as costing at least 0.3 points, ${explained} (${Math.round((100 * explained) / Math.max(1, costly))}%) came with a concrete reason; the rest are limited to an inaccuracy.`);
+  const at = STARTS.map((s, i) => `${s[0]}-${s[1]}: ${all.reduce((n, t) => n + t.guardedAt[i]!, 0)}/${all.reduce((n, t) => n + t.decisionsAt[i]!, 0)}`);
+  console.log(`Match guard (decisions charged at most 'good' because the hand decides the match and the move does not lower the chance of winning it), by score before the hand: ${at.join(', ')}`);
   console.log(`Precision: standard error of the loss - mean ${mean(all.flatMap((t) => t.ses)).toFixed(3)}, 90th pct ${q(all.flatMap((t) => t.ses), 0.9).toFixed(3)} points`);
   console.log(`Repeatability (same decisions, different sampled deals): move accuracy changes by ${mean(all.flatMap((t) => t.repeatMove)).toFixed(1)} points of 100 on average (90th pct ${q(all.flatMap((t) => t.repeatMove), 0.9).toFixed(1)}); hand score changes by ${mean(all.flatMap((t) => t.repeatHand)).toFixed(2)} of 10 on average (90th pct ${q(all.flatMap((t) => t.repeatHand), 0.9).toFixed(1)})`);
   console.log(`Time per decision: mean ${mean(ms).toFixed(0)} ms, 90th pct ${q(ms, 0.9).toFixed(0)} ms, max ${Math.max(...ms).toFixed(0)} ms (${ms.length} decisions)`);

@@ -97,10 +97,12 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   const handReviews = (handNumber: number): HandReview[] =>
     reviews.enabled ? ctl.reviewSeats.flatMap((s) => reviews.get(handNumber, s) ?? []) : [];
   const openReview = (r: HandReview) => setReviewing({ hand: r.handNumber, seat: r.seat });
-  const matchScores = ctl.reviewSeats.map((s) => ({
-    seat: s,
-    score: overallScore(doneHands.map((n) => reviews.get(n, s)?.moves ?? [])),
-  }));
+  /** The figure for the whole match, once every finished hand has been analysed in full (never a partial average). */
+  const matchScores = ctl.reviewSeats.map((s) => {
+    const perHand = doneHands.map((n) => reviews.get(n, s));
+    const pending = perHand.some((r) => r !== null && !r.complete);
+    return { seat: s, pending, score: pending ? null : overallScore(perHand.map((r) => r?.moves ?? [])) };
+  });
   /** Short labels for the top bar and the piles. */
   const shortNames: [string, string] = usThem ? teamNames : [t.common.teamA, t.common.teamB];
 
@@ -503,7 +505,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                   <div className="match-accuracy">
                     {matchScores.map((m) => (
                       <span key={m.seat}>
-                        <ScoreRing score={m.score} size={44} />
+                        <ScoreRing score={m.score} size={44} busy={m.pending} />
                         <small>{usThem ? t.review.matchAccuracy : names[m.seat]}</small>
                       </span>
                     ))}

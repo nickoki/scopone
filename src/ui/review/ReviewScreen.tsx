@@ -60,6 +60,8 @@ function reasonText(r: Reason, t: Dict): string {
       return R.missedNapola(r.n);
     case 'missedSettebello':
       return R.missedSettebello();
+    case 'bankSettebello':
+      return R.bankSettebello();
     case 'laidSettebello':
       return R.laidSettebello(r.pct, r.bestPct);
     case 'missedReBello':
@@ -76,6 +78,8 @@ function reasonText(r: Reason, t: Dict): string {
       return R.category(t.review.categories[r.category]);
     case 'longTerm':
       return R.longTerm();
+    case 'restLater':
+      return R.restLater();
     case 'tookScopa':
       return R.tookScopa();
     case 'tookSettebello':
@@ -125,7 +129,34 @@ function MarkedCards({
 }
 
 /** One legal move in the ranked list: how far behind the best move it is. */
-function OptionRow({ o, worst, isPlayed, isBest, t, lang }: { o: MoveOption; worst: number; isPlayed: boolean; isBest: boolean; t: Dict; lang: string }) {
+function OptionRow({
+  o,
+  worst,
+  isPlayed,
+  isBest,
+  playedLoss,
+  t,
+  lang,
+}: {
+  o: MoveOption;
+  worst: number;
+  isPlayed: boolean;
+  isBest: boolean;
+  /** For the row of the move played: the same figure as in the verdict above (null = nothing held against it). */
+  playedLoss: number | null;
+  t: Dict;
+  lang: string;
+}) {
+  // "≈ equal" only when the gap itself is small; a larger gap that is still within the noise (a move dropped
+  // after the first deals) is shown as a number marked as rough, so label, order and bar agree.
+  const gap = -o.delta;
+  const behind = isPlayed
+    ? playedLoss === null
+      ? t.review.evenTag
+      : `−${fmt(playedLoss, lang, playedLoss < 0.1 ? 2 : 1)}`
+    : gap < 0.05 || (o.even && gap < 0.15)
+      ? t.review.evenTag
+      : `${o.even ? '≈ ' : ''}−${fmt(gap, lang)}`;
   // Full bar for the best move, shrinking with the points given up.
   const width = Math.round(100 - 92 * (worst > 0 ? Math.min(1, -o.delta / worst) : 0));
   return (
@@ -138,9 +169,14 @@ function OptionRow({ o, worst, isPlayed, isBest, t, lang }: { o: MoveOption; wor
       <span className="rv-bar" aria-hidden="true">
         <span style={{ width: `${width}%` }} />
       </span>
-      <span className="rv-ev">{isBest ? '' : o.even || -o.delta < 0.05 ? t.review.evenTag : `−${fmt(-o.delta, lang)}`}</span>
+      <span className="rv-ev">{isBest ? '' : behind}</span>
     </li>
   );
+}
+
+/** The heading of a move: its class, or what it was instead of a scored decision. */
+function moveLabel(m: MoveReview, t: Dict): string {
+  return m.auto ? t.review.autoLabel : m.even ? t.review.evenLabel : t.review.classes[m.cls];
 }
 
 function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; k: number; n: number; name: string; usThem: boolean; names: string[]; t: Dict; lang: string }) {
@@ -149,8 +185,13 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
   const best = m.options[0]!;
   const differs = m.played !== 0 && m.cls !== 'best' && m.cls !== 'brilliant' && m.cls !== 'forced';
   const fewOptions = m.options.length > 1 && !m.auto;
-  const worst = Math.max(...m.options.map((o) => -o.delta));
-  const label = m.even ? t.review.evenLabel : t.review.classes[m.cls];
+  // The bars are scaled to the worst move, but never to less than 0.3 points: in a near-even decision all bars stay long.
+  const worst = Math.max(0.3, ...m.options.map((o) => -o.delta));
+  const label = moveLabel(m, t);
+  // The gap as measured (the same number as in the list of moves below). What is held against the player
+  // can be less: the benefit of the doubt, and the limits explained in the notes under the reasons.
+  const charged = m.cls !== 'forced' && m.credited > 0;
+  const shownLoss = Math.max(-played.delta, m.credited);
   return (
     <article className="rv-detail">
       <header className="rv-verdict" style={{ borderColor: style.color }}>
@@ -161,7 +202,7 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
           <b>{label}</b>
           <small>
             {t.review.moveOf(k, n)}
-            {m.cls !== 'forced' && ` · ${m.credited >= 0.005 ? t.review.lost(fmt(m.credited, lang, m.credited < 0.1 ? 2 : 1)) : t.review.noLoss}`}
+            {m.cls !== 'forced' && ` · ${charged ? t.review.lost(fmt(shownLoss, lang, shownLoss < 0.1 ? 2 : 1)) : t.review.noLoss}`}
           </small>
         </span>
       </header>
@@ -212,6 +253,7 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
             <MoveChips move={best.move} t={t} />
           </div>
         )}
+        {!usThem && m.reasons.length > 0 && <p className="rv-for">{t.review.forPlayer(name)}</p>}
         {m.reasons.length > 0 && (
           <ul className="rv-reasons">
             {m.reasons.map((r, i) => (
@@ -221,7 +263,12 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
         )}
         {m.auto && <p className="rv-muted">{t.review.autoMove}</p>}
         {m.even && <p className="rv-muted">{t.review.equal}</p>}
-        {m.matchSafe && <p className="rv-muted">{t.review.matchSafe}</p>}
+        {m.matchSafe && (
+          <p className="rv-muted">
+            {t.review.matchSafe} {t.review.countsAs(fmt(m.credited, lang, 2))}
+          </p>
+        )}
+        {m.capped && !m.matchSafe && <p className="rv-muted">{t.review.capped(fmt(m.credited, lang))}</p>}
         {!m.auto && !m.even && m.cls === 'forced' && <p className="rv-muted">{t.review.forcedMove}</p>}
         {(m.cls === 'best' || m.cls === 'brilliant') && m.played !== 0 && <p className="rv-muted">{t.review.noClearBetter}</p>}
       </section>
@@ -231,7 +278,7 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
           <summary>{t.review.allMoves}</summary>
           <ul>
             {m.options.map((o, i) => (
-              <OptionRow key={i} o={o} worst={worst} isPlayed={i === m.played} isBest={i === 0} t={t} lang={lang} />
+              <OptionRow key={i} o={o} worst={worst} isPlayed={i === m.played} isBest={i === 0} playedLoss={charged ? shownLoss : null} t={t} lang={lang} />
             ))}
           </ul>
           <p className="rv-muted">
@@ -336,14 +383,19 @@ export function ReviewScreen({
 
   return (
     <div className="screen review">
-      <ScreenHeader title={`${t.review.title} · ${t.review.hand(target.hand)}`} onBack={onClose} />
+      <ScreenHeader title={doneHands.length > 1 ? t.review.title : `${t.review.title} · ${t.review.hand(target.hand)}`} onBack={onClose} />
       <div className="rv-top">
         {doneHands.length > 1 && (
           <div className="rv-hands">
-            <IconButton icon="back" label={t.review.prev} onClick={() => handAt > 0 && setTarget({ ...target, hand: doneHands[handAt - 1]! })} />
+            <IconButton icon="back" label={t.review.prevHand} disabled={handAt <= 0} onClick={() => handAt > 0 && setTarget({ ...target, hand: doneHands[handAt - 1]! })} />
             <span>{t.review.hand(target.hand)}</span>
             <span className="rv-flip">
-              <IconButton icon="back" label={t.review.next} onClick={() => handAt < doneHands.length - 1 && setTarget({ ...target, hand: doneHands[handAt + 1]! })} />
+              <IconButton
+                icon="back"
+                label={t.review.nextHand}
+                disabled={handAt >= doneHands.length - 1}
+                onClick={() => handAt < doneHands.length - 1 && setTarget({ ...target, hand: doneHands[handAt + 1]! })}
+              />
             </span>
           </div>
         )}
@@ -364,7 +416,7 @@ export function ReviewScreen({
               type="button"
               role="tab"
               aria-selected={i === k}
-              aria-label={`${t.review.moveOf(i + 1, moves.length)}: ${m.even ? t.review.evenLabel : t.review.classes[m.cls]}`}
+              aria-label={`${t.review.moveOf(i + 1, moves.length)}: ${moveLabel(m, t)}`}
               className={`rv-step${i === k ? ' on' : ''}`}
               style={{ background: CLASS_STYLE[m.cls].color, color: CLASS_STYLE[m.cls].ink }}
               onClick={() => setStep(i)}

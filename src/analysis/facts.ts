@@ -3,7 +3,8 @@
  * another. Everything is computed from the player's own view of the position.
  */
 import { RE_BELLO, SCORE_CATEGORIES, SETTEBELLO, isDenari, rankOf, type HandState, type Move, type Rules, type ScoreCategory } from '../engine';
-import type { MoveOption, OptionFacts, Reason } from './types';
+import { EXPLAINED_SHARE } from './scoring';
+import type { AnalysedOption, OptionFacts, Reason } from './types';
 
 /**
  * `pos` must be the mover's own view (other hands hidden). `others[r]` = cards
@@ -36,8 +37,10 @@ export function factsFor(
     cards: won.length,
     denari: won.filter(isDenari).length,
     settebello: won.includes(SETTEBELLO),
-    sevens: won.filter((c) => rankOf(c) === 7).length,
+    settebelloTaken: move.capture.includes(SETTEBELLO),
+    sevensTaken: move.capture.filter((c) => rankOf(c) === 7 && c !== SETTEBELLO).length,
     reBello: rules.reBello && won.includes(RE_BELLO),
+    reBelloTaken: rules.reBello && move.capture.includes(RE_BELLO),
     napola: won.filter(isNapolaCard).length,
     leftSum,
     leftCount: left.length,
@@ -58,27 +61,30 @@ const SCOPA_CATS: ScoreCategory[] = ['scope'];
 const SETTEBELLO_CATS: ScoreCategory[] = ['settebello', 'primiera', 'denari'];
 const CARD_CATS: ScoreCategory[] = ['carte', 'denari', 'primiera', 'settebello', 'reBello', 'napola'];
 
+/** A concrete reason why one move is better than another, with roughly how many points it accounts for. */
+export interface Candidate {
+  reason: Reason;
+  impact: number;
+  /** A second sentence that only makes sense together with `reason`. */
+  extra?: Reason;
+}
+
 /**
- * Up to two reasons why `best` is preferred to `played`, biggest first.
+ * Every concrete, checkable reason why `best` is preferred to `played`.
  *
- * Three guards keep an explanation honest:
+ * Two guards apply here (a third, the share of the loss a reason must account
+ * for, is applied by `reasonsFrom`):
  *  - apart from certain, immediate points (a scopa, the settebello, the Re
- *    bello), it is dropped when the simulation contradicts it (the matching
- *    scoring categories go the other way);
- *  - it must account for a real share of the loss (at least a third of
- *    `loss`): a detail worth a tenth of a point does not explain a mistake
- *    that costs a whole one;
+ *    bello), a reason is dropped when the simulation contradicts it (the
+ *    matching scoring categories go the other way);
  *  - points that are already decided (one side has 21 cards, or 6 Coins) are
  *    not mentioned.
- * When nothing survives, the answer is the honest fallback: the category the
- * simulation loses most in, or simply "the rest of the hand".
  */
-export function reasonsFor(
-  played: MoveOption,
-  best: MoveOption,
+export function candidatesFor(
+  played: AnalysedOption,
+  best: AnalysedOption,
   decided: { carte: boolean; denari: boolean } = { carte: false, denari: false },
-  loss = 0,
-): Reason[] {
+): Candidate[] {
   const p = played.facts;
   const b = best.facts;
   const gap = (cats: ScoreCategory[]): number | null => {
@@ -92,8 +98,7 @@ export function reasonsFor(
     return g === null || g > -0.05;
   };
 
-  /** Candidate reasons with roughly how many points each accounts for. */
-  const found: { reason: Reason; impact: number; extra?: Reason }[] = [];
+  const found: Candidate[] = [];
   const add = (reason: Reason, impact: number, extra?: Reason) => found.push({ reason, impact, extra });
 
   // Certain, immediate points need no confirmation from the simulation.
@@ -105,9 +110,12 @@ export function reasonsFor(
       b.leftCount > 0 && b.leftSum > 10 ? { code: 'tableSafe', sum: b.leftSum } : undefined,
     );
   }
-  if (b.settebello && !p.settebello) add({ code: 'missedSettebello' }, 1);
+  // "Take" means from the table. Capturing WITH the settebello held in hand only puts it out of reach a little
+  // earlier (the player still holds it otherwise), so it is a smaller matter and the simulation must agree.
+  if (b.settebelloTaken && !p.settebello) add({ code: 'missedSettebello' }, 1);
+  else if (b.settebello && !p.settebello && !p.laidSettebello && agrees(SETTEBELLO_CATS)) add({ code: 'bankSettebello' }, 0.3);
   // (laying the settebello / a valuable card is judged below, from what the playouts saw happen to it)
-  if (b.reBello && !p.reBello) add({ code: 'missedReBello' }, 1);
+  if (b.reBelloTaken && !p.reBello) add({ code: 'missedReBello' }, 1);
   if (b.napola > p.napola && agrees(['napola'])) add({ code: 'missedNapola', n: b.napola - p.napola }, b.napola - p.napola);
 
   // What the simulation sees happen before the player's next turn.
@@ -122,7 +130,7 @@ export function reasonsFor(
       add({ code: 'partnerScopa', pct: pct(bn.ownScopa), playedPct: pct(pn.ownScopa) }, bn.ownScopa - pn.ownScopa);
     }
     const settebelloGap = pn.oppSettebello - bn.oppSettebello;
-    if (settebelloGap >= 0.15 && agrees(SETTEBELLO_CATS) && !found.some((f) => f.reason.code === 'missedSettebello')) {
+    if (settebelloGap >= 0.15 && agrees(SETTEBELLO_CATS) && !found.some((f) => f.reason.code === 'missedSettebello' || f.reason.code === 'bankSettebello')) {
       const numbers = { pct: pct(pn.oppSettebello), bestPct: pct(bn.oppSettebello) };
       add(p.laidSettebello ? { code: 'laidSettebello', ...numbers } : { code: 'nearSettebello', ...numbers }, settebelloGap);
     }
@@ -133,13 +141,41 @@ export function reasonsFor(
     }
   }
 
-  const settebelloExplains = found.some((f) => f.reason.code === 'missedSettebello');
+  // The settebello is a Coin too: once it has been named, it is not counted again as "one more Coin".
+  const settebelloExplains = found.some((f) => f.reason.code === 'missedSettebello' || f.reason.code === 'bankSettebello');
   if (!decided.denari && b.denari - p.denari >= (settebelloExplains ? 2 : 1) && agrees(CARD_CATS)) add({ code: 'moreDenari', n: b.denari - p.denari }, 0.17 * (b.denari - p.denari));
-  if (b.sevens - p.sevens >= (settebelloExplains ? 2 : 1) && agrees(['primiera'])) add({ code: 'missedSeven' }, 0.22 * (b.sevens - p.sevens));
+  // Sevens taken from the table (the settebello has its own sentence; a seven played from the hand is not "taken").
+  if (b.sevensTaken - p.sevensTaken >= 1 && agrees(['primiera'])) add({ code: 'missedSeven' }, 0.22 * (b.sevensTaken - p.sevensTaken));
   if (!decided.carte && b.cards - p.cards >= 2 && agrees(['carte'])) add({ code: 'moreCards', n: b.cards - p.cards }, 0.05 * (b.cards - p.cards));
 
-  const enough = Math.max(0.08, loss / 3);
-  const kept = found.filter((f) => f.impact >= enough).sort((x, y) => y.impact - x.impact);
+  return found;
+}
+
+/**
+ * The most that concrete reasons can justify charging: a reason has to account
+ * for at least EXPLAINED_SHARE of the loss, so the loss charged is at most the
+ * biggest reason's impact divided by that share. 0 when there is no reason.
+ */
+export function explainedLimit(candidates: readonly Candidate[]): number {
+  let top = 0;
+  for (const c of candidates) top = Math.max(top, c.impact);
+  return top / EXPLAINED_SHARE;
+}
+
+/**
+ * Up to two reasons for a loss of `loss` points, biggest first.
+ *
+ * A reason must account for a real share of the loss (EXPLAINED_SHARE): a
+ * detail worth a tenth of a point does not explain a mistake that costs a
+ * whole one. When there are visible facts but none is big enough, the biggest
+ * is still named - it is there on the table for the player to see - followed
+ * by the admission that most of the difference comes later. With no fact at
+ * all, the answer is the honest fallback: the category the simulation loses
+ * most in, or simply "the rest of the hand".
+ */
+export function reasonsFrom(candidates: readonly Candidate[], played: AnalysedOption, best: AnalysedOption, loss: number): Reason[] {
+  const enough = Math.max(0.08, loss * EXPLAINED_SHARE) - 1e-9;
+  const kept = candidates.filter((f) => f.impact >= enough).sort((x, y) => y.impact - x.impact);
   if (kept.length > 0) {
     const out: Reason[] = [];
     for (const f of kept) {
@@ -147,6 +183,11 @@ export function reasonsFor(
       if (f.extra) out.push(f.extra);
     }
     return out.slice(0, 2);
+  }
+
+  if (candidates.length > 0) {
+    const top = candidates.reduce((x, y) => (y.impact > x.impact ? y : x));
+    return [top.reason, { code: 'restLater' }];
   }
 
   // Nothing concrete: say where the simulation sees the difference, if it can.
@@ -165,13 +206,23 @@ export function reasonsFor(
   return [{ code: 'longTerm' }];
 }
 
+/** Up to two reasons why `best` is preferred to `played`, which loses `loss` points against it (see `candidatesFor` and `reasonsFrom`). */
+export function reasonsFor(
+  played: AnalysedOption,
+  best: AnalysedOption,
+  decided: { carte: boolean; denari: boolean } = { carte: false, denari: false },
+  loss = 0,
+): Reason[] {
+  return reasonsFrom(candidatesFor(played, best, decided), played, best, loss);
+}
+
 /** True when a reason is a concrete, checkable fact (not just "the simulation says so"). */
 export function isConcrete(reason: Reason): boolean {
-  return reason.code !== 'category' && reason.code !== 'longTerm';
+  return reason.code !== 'category' && reason.code !== 'longTerm' && reason.code !== 'restLater';
 }
 
 /** A word on why a good move was good; only for decisions that mattered. */
-export function praiseFor(played: MoveOption, alternatives: readonly MoveOption[]): Reason[] {
+export function praiseFor(played: AnalysedOption, alternatives: readonly AnalysedOption[]): Reason[] {
   const f = played.facts;
   if (f.scopa) return [{ code: 'tookScopa' }];
   if (f.settebello) return [{ code: 'tookSettebello' }];

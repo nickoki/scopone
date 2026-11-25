@@ -188,8 +188,8 @@ export function useLocalGame(
     spectator: humans === 0,
     ready,
     readyUp,
-    // A one-way mix of the seed: the review layer never holds the value the deck could be derived from.
-    gameKey: `local:${(Math.imul(game.match.seed ^ 0x5bd1e995, 0x27d4eb2d) >>> 0).toString(36)}`,
+    // The game's own random id, not its seed: the review layer never holds a value the deck could be derived from.
+    gameKey: `local:${game.id}`,
     reviewSeats,
     scopa: display.scopa,
   };

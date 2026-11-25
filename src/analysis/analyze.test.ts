@@ -17,10 +17,10 @@ import { c, cs, makeHand } from '../engine/testUtils';
 import { analyseDecision, analyseHand, analyseMove, analysePosition, crossFittedLoss, type AnalysisBudget } from './analyze';
 import { exactKnowledge, track } from '../ai/difficile';
 import { pNextHas } from '../ai/heuristics';
-import { factsFor } from './facts';
+import { candidatesFor, explainedLimit, factsFor, reasonsFrom } from './facts';
 import { decisionAt, moveIndices, positionBefore } from './positions';
-import { accuracyOf, classOf, creditedLoss, handScore, weightOf } from './scoring';
-import type { MoveReview } from './types';
+import { UNEXPLAINED_CAP, accuracyOf, classOf, creditedLoss, handScore, limitedLoss, weightOf } from './scoring';
+import { slimReview, type AnalysedOption, type MoveReview, type OptionFacts } from './types';
 
 const QUICK: AnalysisBudget = { first: 60, batch: 60, max: 240, precision: 0.06, exhaustive: 600 };
 
@@ -243,6 +243,22 @@ describe('what leaves the device\'s game state for the analysis', () => {
   });
 });
 
+describe('what the app keeps of an analysed decision', () => {
+  it('is the verdict, the reasons and the list of moves - not the working data', () => {
+    const { final } = playHand(DEFAULT_RULES, 3);
+    const index = moveIndices(final.hand, 0)[2]!;
+    const full = analyseMove(final.hand, DEFAULT_RULES, index, QUICK)!;
+    const kept = slimReview(full);
+    for (const o of kept.options) expect(Object.keys(o).sort()).toEqual(['delta', 'ev', 'even', 'move', 'samples']);
+    expect(kept.options.map((o) => o.move)).toEqual(full.options.map((o) => o.move));
+    expect(kept.reasons).toEqual(full.reasons);
+    expect(kept.cls).toBe(full.cls);
+    expect(kept.accuracy).toBe(full.accuracy);
+    for (const s of kept.since) expect(Object.keys(s).sort()).toEqual(['captured', 'card', 'scopa', 'seat']);
+    expect(JSON.stringify(kept).length).toBeLessThan(JSON.stringify(full).length / 2);
+  });
+});
+
 describe('when the hand can decide the match', () => {
   it('a move that costs points but not the match is not called a mistake', () => {
     // Our side needs one more point to win at 11 and the settebello already in our pile gives it:
@@ -266,6 +282,53 @@ describe('when the hand can decide the match', () => {
     expect(safe.accuracy).toBeGreaterThan(85);
     // far from the target the guard does nothing
     expect(analysePosition(pos, rules, move, 16, QUICK, [0, 0])).toEqual(plain);
+    // ...and neither does it in mid-match, where the hand ends the match only in a few deals:
+    // the points lost still count in all the others
+    expect(analysePosition(pos, rules, move, 16, QUICK, [4, 4])).toEqual(plain);
+    expect(analysePosition(pos, rules, move, 16, QUICK, [5, 5])).toEqual(plain);
+  });
+});
+
+describe('losses the review cannot explain', () => {
+  const facts = factsFor(makeHand({ hands: [cs('1B'), [], [], []], table: [], turn: 0, dealer: 3 }), 0, DEFAULT_RULES, { card: c('1B'), capture: [] }, new Array<number>(11).fill(0), () => 0);
+  const option = (extra: Partial<OptionFacts>): AnalysedOption => ({
+    move: { card: c('1B'), capture: [] },
+    ev: 0,
+    delta: 0,
+    even: false,
+    samples: 200,
+    byCategory: null,
+    near: null,
+    facts: { ...facts, ...extra },
+  });
+
+  it('are limited to what a concrete reason accounts for, and never charged less when they are larger', () => {
+    // the best move took two cards, one of them a Coin: the Coin is worth about 0.17 of a point,
+    // so it can justify charging up to about half a point (the two cards, 0.1, less)
+    const playedOpt = option({ denari: 0 });
+    const bestOpt = option({ denari: 1, cards: 2 });
+    const candidates = candidatesFor(playedOpt, bestOpt);
+    expect(candidates.map((x) => x.reason.code)).toEqual(['moreDenari', 'moreCards']);
+    const limit = explainedLimit(candidates);
+    expect(limit).toBeCloseTo(0.51, 5);
+    expect(limitedLoss(0.3, limit)).toBe(0.3);
+    expect(limitedLoss(0.48, limit)).toBe(0.48);
+    expect(limitedLoss(0.9, limit)).toBeCloseTo(0.51, 5);
+    // the reason shown still explains the amount charged
+    expect(reasonsFrom(candidates, playedOpt, bestOpt, limitedLoss(0.9, limit)).map((r) => r.code)).toEqual(['moreDenari']);
+    // with nothing concrete, at most an inaccuracy
+    expect(limitedLoss(1.4, explainedLimit([]))).toBe(UNEXPLAINED_CAP);
+    expect(reasonsFrom([], playedOpt, bestOpt, UNEXPLAINED_CAP).map((r) => r.code)).toEqual(['longTerm']);
+    // monotone in the measured loss, whatever the reasons are worth
+    for (const explained of [0, 0.2, 0.51, 1.05, 3]) {
+      let last = 0;
+      for (let loss = 0; loss <= 2.5; loss += 0.01) {
+        const charged = limitedLoss(loss, explained);
+        expect(charged).toBeGreaterThanOrEqual(last);
+        expect(charged).toBeLessThanOrEqual(loss);
+        last = charged;
+      }
+    }
   });
 });
 

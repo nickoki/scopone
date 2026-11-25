@@ -19,8 +19,11 @@ export function defaultSeats(mode: LocalMode, playerName: string, you: string, p
   ];
 }
 
+/** A random id for a game; a separate draw from the seed of its deck. */
+const newGameId = (): string => `${(randomSeed() >>> 0).toString(36)}${(randomSeed() >>> 0).toString(36)}`;
+
 export function newLocalGame(mode: LocalMode, seats: SeatConfig[], rules: Rules, tutorial: boolean): LocalGame {
-  return { mode, seats, match: createMatch(rules, randomSeed()), tutorial, savedAt: Date.now() };
+  return { id: newGameId(), mode, seats, match: createMatch(rules, randomSeed()), tutorial, savedAt: Date.now() };
 }
 
 /** Load the unfinished local game, if there is a usable one. */
@@ -38,6 +41,12 @@ export function loadLocalGame(): LocalGame | null {
       typeof g.match.rngState !== 'number'
     ) {
       return null;
+    }
+    if (typeof g.id !== 'string' || g.id === '') {
+      // A game saved by an earlier version: name it now, once.
+      const named = { ...g, id: newGameId() };
+      saveJson(KEYS.localGame, named);
+      return named;
     }
     return g;
   } catch {

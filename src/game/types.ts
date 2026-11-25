@@ -11,6 +11,11 @@ export interface SeatConfig {
 
 /** A local (vs computer / pass-and-play) game as stored in localStorage. */
 export interface LocalGame {
+  /**
+   * A random name for this game, drawn independently of the deck's seed. It is what the stored move
+   * reviews are filed under, so nothing kept with them can be used to work out the cards.
+   */
+  id: string;
   mode: LocalMode;
   seats: SeatConfig[];
   match: MatchState;

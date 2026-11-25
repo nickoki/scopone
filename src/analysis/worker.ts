@@ -7,7 +7,7 @@
 import type { Rules } from '../engine';
 import { analyseDecision } from './analyze';
 import type { Decision } from './positions';
-import type { MoveReview } from './types';
+import { slimReview, type MoveReview } from './types';
 
 export interface AnalysisRequest {
   id: number;
@@ -30,7 +30,7 @@ ctx.onmessage = (ev: MessageEvent<AnalysisRequest>) => {
   let res: AnalysisResponse;
   try {
     const review = analyseDecision(decision, rules, scores);
-    res = review ? { id, review } : { id, error: 'inconsistent record' };
+    res = review ? { id, review: slimReview(review) } : { id, error: 'inconsistent record' };
   } catch (err) {
     res = { id, error: err instanceof Error ? err.message : String(err) };
   }
