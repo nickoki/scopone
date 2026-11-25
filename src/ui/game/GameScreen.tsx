@@ -14,10 +14,16 @@ import {
 } from '../../engine';
 import type { GameController } from '../../game/types';
 import { useT } from '../../i18n';
+import { overallScore } from '../../analysis/scoring';
+import type { HandReview } from '../../analysis/types';
+import { useHandReviews } from '../../analysis/useHandReviews';
 import { TIMINGS } from '../../game/useDisplay';
+import { isUnlocked } from '../../state/entitlements';
 import { useSettings } from '../../state/settings';
 import { Icon, IconButton, Modal, Segmented, Toggle } from '../common';
 import { HowTo } from '../HowTo';
+import { AccuracySummary, ScoreRing } from '../review/AccuracySummary';
+import { ReviewScreen, type ReviewTarget } from '../review/ReviewScreen';
 import { Board, type BoardMarks } from './Board';
 import { HandEndDialog, LastTrickDialog, MatchEndDialog, ScoreboardDialog } from './Dialogs';
 import { LastAction } from './LastAction';
@@ -73,6 +79,28 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
     return [`${names[0]} & ${names[2]}`, `${names[1]} & ${names[3]}`];
   }, [usThem, myTeam, t, names.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
   const cols = { first: myTeam, names: teamNames };
+
+  // ---- move analysis: accuracy after each hand and the review
+  const reviews = useHandReviews(
+    ctl.gameKey,
+    view,
+    ctl.reviewSeats,
+    settings.review && isUnlocked('accuracy'),
+    ctl.mode === 'online',
+    // Do not compete with a computer player for the processor while it thinks.
+    ctl.thinking !== null && view.phase === 'playing',
+  );
+  const [reviewing, setReviewing] = useState<ReviewTarget | null>(null);
+  /** Hands that are over (only those may be reviewed: a hand in progress would show cards). */
+  const doneHands = reviews.hands.filter((n) => n < view.handNumber || view.phase !== 'playing');
+  const seatLabel = (seat: number) => (usThem ? t.review.yourAccuracy : t.review.accuracyOf(names[seat]!));
+  const handReviews = (handNumber: number): HandReview[] =>
+    reviews.enabled ? ctl.reviewSeats.flatMap((s) => reviews.get(handNumber, s) ?? []) : [];
+  const openReview = (r: HandReview) => setReviewing({ hand: r.handNumber, seat: r.seat });
+  const matchScores = ctl.reviewSeats.map((s) => ({
+    seat: s,
+    score: overallScore(doneHands.map((n) => reviews.get(n, s)?.moves ?? [])),
+  }));
   /** Short labels for the top bar and the piles. */
   const shortNames: [string, string] = usThem ? teamNames : [t.common.teamA, t.common.teamB];
 
@@ -101,6 +129,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   const play = () => {
     if (!choosing || selected === null) return;
     // The card stays lifted until it has actually left the hand (see the effect below).
+    reviews.notePlayed(view.handNumber, hand.history.length, selected);
     ctl.play({ card: selected, capture: option });
   };
   // Holding and sliding across the hand lifts each card in turn (also when it is
@@ -456,13 +485,59 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
           canContinue={ctl.canContinue}
           onContinue={ctl.continueAfterHand}
           waitingText={t.game.waitingHost}
+          accuracy={<AccuracySummary reviews={handReviews(view.handNumber)} label={seatLabel} onOpen={openReview} />}
         />
       )}
       {showMatchEnd && (
-        <MatchEndDialog view={view} cols={cols} t={t} usThem={usThem} onRematch={onRematch} onHome={onAbandon ?? onExit} />
+        <MatchEndDialog
+          view={view}
+          cols={cols}
+          t={t}
+          usThem={usThem}
+          onRematch={onRematch}
+          onHome={onAbandon ?? onExit}
+          accuracy={
+            reviews.enabled && doneHands.length > 0 ? (
+              <>
+                {doneHands.length > 1 && (
+                  <div className="match-accuracy">
+                    {matchScores.map((m) => (
+                      <span key={m.seat}>
+                        <ScoreRing score={m.score} size={44} />
+                        <small>{usThem ? t.review.matchAccuracy : names[m.seat]}</small>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <AccuracySummary reviews={handReviews(view.handNumber)} label={seatLabel} onOpen={openReview} />
+              </>
+            ) : undefined
+          }
+        />
       )}
 
-      {dialog === 'score' && <ScoreboardDialog view={view} cols={cols} t={t} onClose={() => setDialog(null)} />}
+      {dialog === 'score' && (
+        <ScoreboardDialog
+          view={view}
+          cols={cols}
+          t={t}
+          onClose={() => setDialog(null)}
+          footer={
+            reviews.enabled && doneHands.length > 0 && ctl.reviewSeats.length > 0 ? (
+              <button
+                type="button"
+                className="btn wide"
+                onClick={() => {
+                  setDialog(null);
+                  setReviewing({ hand: doneHands[doneHands.length - 1]!, seat: ctl.reviewSeats[0]! });
+                }}
+              >
+                {t.review.openAll}
+              </button>
+            ) : undefined
+          }
+        />
+      )}
       {dialog === 'trick' && (
         <LastTrickDialog
           view={view}
@@ -483,6 +558,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
             <Toggle label={t.setup.tutorial} hint={t.setup.tutorialHint} checked={ctl.tutorial} onChange={ctl.setTutorial} />
             <Toggle label={t.settings.showIndex} checked={settings.showIndex} onChange={(v) => update({ showIndex: v })} />
             <Toggle label={t.settings.largeText} hint={t.settings.largeTextHint} checked={settings.largeText} onChange={(v) => update({ largeText: v })} />
+            <Toggle label={t.review.settingLabel} checked={settings.review} onChange={(v) => update({ review: v })} />
             <div className="row col">
               <span className="row-label">{t.settings.speed}</span>
               <Segmented
@@ -535,6 +611,19 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
             </button>
           </div>
         </Modal>
+      )}
+      {reviewing && (
+        <div className="overlay-screen">
+          <ReviewScreen
+            reviews={reviews}
+            start={reviewing}
+            seats={ctl.reviewSeats}
+            names={names}
+            usThem={usThem}
+            doneHands={doneHands}
+            onClose={() => setReviewing(null)}
+          />
+        </div>
       )}
       {dialog === 'howto' && (
         <div className="overlay-screen">

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { CardStyle } from '../../cards';
 import { SCORE_CATEGORIES, type HandScore, type MatchState, type ScoreCategory, type Team } from '../../engine';
 import type { Dict } from '../../i18n';
@@ -81,6 +82,7 @@ export function HandEndDialog({
   canContinue,
   onContinue,
   waitingText,
+  accuracy,
 }: {
   view: MatchState;
   cols: TeamCols;
@@ -89,6 +91,8 @@ export function HandEndDialog({
   canContinue: boolean;
   onContinue: () => void;
   waitingText: string;
+  /** The move-accuracy summary for the people on this device. */
+  accuracy?: ReactNode;
 }) {
   const score = view.handScores[view.handScores.length - 1]!;
   const order: Team[] = [cols.first, (1 - cols.first) as Team];
@@ -124,13 +128,17 @@ export function HandEndDialog({
         <span className="target">{t.score.target(view.rules.target)}</span>
       </div>
       {tied && <p className="note strong">{t.score.tieBreak}</p>}
-      {canContinue ? (
-        <button type="button" className="btn primary wide" onClick={onContinue}>
-          {t.score.nextHand}
-        </button>
-      ) : (
-        <p className="note waiting">{waitingText}</p>
-      )}
+      {/* Pinned to the bottom of the dialog: the score and "Next hand" never scroll out of reach. */}
+      <div className="hand-end-foot">
+        {accuracy}
+        {canContinue ? (
+          <button type="button" className="btn primary wide" onClick={onContinue}>
+            {t.score.nextHand}
+          </button>
+        ) : (
+          <p className="note waiting">{waitingText}</p>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -142,6 +150,7 @@ export function MatchEndDialog({
   usThem,
   onRematch,
   onHome,
+  accuracy,
 }: {
   view: MatchState;
   cols: TeamCols;
@@ -149,6 +158,7 @@ export function MatchEndDialog({
   usThem: boolean;
   onRematch?: () => void;
   onHome: () => void;
+  accuracy?: ReactNode;
 }) {
   const winner = view.winner ?? 0;
   const order: Team[] = [cols.first, (1 - cols.first) as Team];
@@ -173,6 +183,7 @@ export function MatchEndDialog({
         <summary>{t.score.handOver(view.handNumber)}</summary>
         <ScoreTable score={score} cols={cols} t={t} rules={view.rules} />
       </details>
+      {accuracy}
       <div className="btn-col">
         {onRematch && (
           <button type="button" className="btn primary wide" onClick={onRematch}>
@@ -187,7 +198,19 @@ export function MatchEndDialog({
   );
 }
 
-export function ScoreboardDialog({ view, cols, t, onClose }: { view: MatchState; cols: TeamCols; t: Dict; onClose: () => void }) {
+export function ScoreboardDialog({
+  view,
+  cols,
+  t,
+  onClose,
+  footer,
+}: {
+  view: MatchState;
+  cols: TeamCols;
+  t: Dict;
+  onClose: () => void;
+  footer?: ReactNode;
+}) {
   const order: Team[] = [cols.first, (1 - cols.first) as Team];
   let run: [number, number] = [0, 0];
   return (
@@ -240,6 +263,7 @@ export function ScoreboardDialog({ view, cols, t, onClose }: { view: MatchState;
           ))}
         </div>
       </div>
+      {footer}
     </Modal>
   );
 }

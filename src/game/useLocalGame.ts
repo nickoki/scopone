@@ -166,6 +166,7 @@ export function useLocalGame(
   );
 
   const shown = display.shown ?? latest;
+  const reviewSeats = useMemo(() => humanSeats.flatMap((human, s) => (human ? [s as Seat] : [])), [humanSeats]);
 
   return {
     view: shown,
@@ -187,6 +188,9 @@ export function useLocalGame(
     spectator: humans === 0,
     ready,
     readyUp,
+    // A one-way mix of the seed: the review layer never holds the value the deck could be derived from.
+    gameKey: `local:${(Math.imul(game.match.seed ^ 0x5bd1e995, 0x27d4eb2d) >>> 0).toString(36)}`,
+    reviewSeats,
     scopa: display.scopa,
   };
 }

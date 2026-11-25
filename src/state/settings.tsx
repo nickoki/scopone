@@ -15,6 +15,8 @@ export interface Settings {
   /** Bigger values on the cards and in the last-play markers (implies the index). */
   largeText: boolean;
   sound: boolean;
+  /** Analyse the player's moves and offer the accuracy score and the review. */
+  review: boolean;
   speed: Speed;
   rules: Rules;
   playerName: string;
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showIndex: true,
   largeText: false,
   sound: true,
+  review: true,
   speed: 'normal',
   rules: DEFAULT_RULES,
   playerName: '',
@@ -46,6 +49,7 @@ export function sanitizeSettings(raw: unknown): Settings {
   if (typeof r.showIndex === 'boolean') s.showIndex = r.showIndex;
   if (typeof r.largeText === 'boolean') s.largeText = r.largeText;
   if (typeof r.sound === 'boolean') s.sound = r.sound;
+  if (typeof r.review === 'boolean') s.review = r.review;
   if (r.speed === 'slow' || r.speed === 'normal' || r.speed === 'fast') s.speed = r.speed;
   if (typeof r.playerName === 'string') s.playerName = r.playerName.slice(0, 14);
   if (typeof r.tutorialOffered === 'boolean') s.tutorialOffered = r.tutorialOffered;

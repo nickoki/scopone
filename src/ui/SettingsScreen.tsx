@@ -76,6 +76,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
         <Section>
           <Toggle label={t.settings.sound} checked={settings.sound} onChange={(sound) => update({ sound })} />
+          <Toggle
+            label={t.review.settingLabel}
+            hint={t.review.settingHint}
+            checked={settings.review}
+            onChange={(review) => update({ review })}
+          />
           <div className="row col">
             <span className="row-text">
               <span className="row-label">{t.settings.speed}</span>

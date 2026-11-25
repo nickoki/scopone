@@ -106,6 +106,79 @@ To still satisfy "players receive only their own hand":
 - **Reconnection** is left to the Supabase client, which rejoins a channel after errors and timeouts on its own; the app only builds a new channel when the old one is fully closed, and waits until it has been removed first (the client returns an existing channel with the same name). An earlier version tore channels down on every error and could loop forever, leaving guests stuck on "connecting".
 - A development/test transport (`BroadcastChannel`, tabs of one browser) is built in. It is used automatically in `npm run dev` when Supabase is not configured, and never in a production build unless `VITE_ONLINE_TRANSPORT=local` is set.
 
+## Move accuracy and hand review
+
+After every hand each person playing on the device gets a score out of 10 ("7,2" = 72% move accuracy) and can open a review that walks through their decisions, chess.com style.
+
+**The information rule.** A score or an explanation may depend only on what that player could know at that moment: their own cards and the public record up to that move. This is enforced by construction, not by convention:
+
+- The analysis never receives a game state. It receives a `Decision` (`src/analysis/positions.ts`): the player's own dealt cards, how many cards each seat was dealt, the dealer, the cards dealt face up, the public plays *before* this move, and the move itself. The record has no field in which another player's card or a later move could travel, and it is the only thing sent to the analysis worker.
+- `positionOf` rebuilds the position from that record with every other hand filled with placeholders, and `analysePosition` masks the other hands once more before doing anything, so even a caller holding the real cards (a test, the calibration script) cannot leak them.
+- The random deals are seeded from the player's own cards, the table and the public plays, so nothing hidden can reach the result through the random numbers either — and the same decision always gets the same verdict, mid-hand or reopened later.
+- It is tested: a unit test and every decision in `npm run accuracy` are analysed from the full game state, from the player's own masked view, with the other three hands shuffled, and from the finished hand; the four results must be identical.
+- What it *does* assume: the player remembers every card that has been played (that is the skill being measured), and the one inference the strongest AI also makes — a player who left an available sweep on the table probably does not hold that rank.
+
+**How a move is judged.** For the position as the player saw it, many possible deals of the unseen cards are drawn; every legal move is played on the same deals and the hand is played out (the Difficile machinery: heuristic playouts, exact search in the last three rounds). A move's value is the average final point difference of the hand. Then:
+
+- **Adaptive sampling.** 200 deals for every legal move, then batches of 200 (up to 2,400) for the moves that matter — the one played and up to four that could be the best — until the gap is known to about ±0.045 points, the move played is clearly the best, or it is unmistakably a blunder.
+- **Exact when possible.** When the unseen cards can be dealt in at most 600 ways, every deal is played exactly once instead of sampling, so late-hand verdicts have no sampling error.
+- **Loss** = value of the best move − value of the move played, measured without the "best of several noisy averages always looks better than it is" bias: the deals are split in two halves, the best move is chosen on one half and the gap measured on the other, and vice versa. The truly best move is therefore not charged for a rival's lucky half.
+- **Two judges at the end of the hand.** In the last three rounds the engine solves each sampled deal with all four hands face up — perfect play that no player at the table could reproduce. A move is then also judged with ordinary playouts, and the *more lenient* of the two verdicts counts.
+- **Benefit of the doubt.** The loss held against the player (*credited loss*) is the measured gap minus an allowance of 0.08 points, or one standard error if that is larger. The allowance is continuous, so two almost identical measurements never get very different verdicts.
+- **No harsh verdict without a reason that can be shown.** If the review cannot point to a concrete fact (a missed scopa, a sweep left on the table with its odds, the settebello, a valuable card exposed…), the credited loss is capped at 0.4 — at worst an "Inaccuracy". The simulation alone is not trusted to call something a mistake.
+- **Winning the match beats the margin.** When the hand can decide the match, the moves are also compared on how often the match is won. A move that earns fewer points on average but is not behind any rival in match wins is charged at most 0.15 ("Good"), and the review says why.
+- **Nothing to get right.** When every legal move is within 0.05 points of the best, the decision is shown but not scored.
+- **Accuracy of a decision** = 100 · e^(−(credited loss / 0.4)²). The curve is flat near zero and steep in the middle so the number agrees with the label: a "Good" move keeps at least 87%, an "Inaccuracy" at least 37%, a "Mistake" at least 2%, and a scopa handed over is worth next to nothing.
+- **Score of the hand** = the average accuracy of the scored decisions, each weighted by what was at stake there (what an average choice among the legal moves would lose — and never less than what the move played did lose — clamped to 0.2–1.5), divided by 10. Trivial choices count a little, decisions that decide the hand count a lot. Forced moves, even decisions and moves the computer made for an absent player are not scored. The match figure is the same average over all the hands.
+- **One marking scale on every device.** There is deliberately no lighter analysis for slow phones: fewer deals mean a larger margin of error, which the scoring forgives, so a cheaper analysis would be a more lenient marker.
+
+**Classes** (credited loss in points): *Migliore / Best* 0 · *Buona / Good* ≤ 0.15 · *Imprecisione / Inaccuracy* ≤ 0.4 · *Errore / Mistake* ≤ 0.8 · *Errore grave / Blunder* above. *Finezza / Great find* is a best move where the obvious move (what the Medio heuristic would play at a glance) was worse by at least 0.5 points beyond doubt, according to both judges. *Obbligata / Forced* is unscored.
+
+**Explanations.** Each option carries plain facts computed from the player's view: does it sweep, how many cards / Coins / sevens / Napola cards it wins, the settebello, the Re bello, what total it leaves on the table and how many cards that would sweep it are still unseen. Two kinds of numbers are shown, and both come from the very deals the verdict was computed on, so the explanation and the score cannot disagree about the odds:
+
+- the chance that the *next player* holds the card that sweeps the table (the share of the sampled deals in which they do);
+- what the playouts saw happen in the three plays before the player's next turn: the opponents sweeping, the partner sweeping, the settebello or a valuable laid card being taken.
+
+Three guards keep an explanation honest: apart from certain, immediate points (a scopa, the settebello, the Re bello) it is dropped when the simulation's per-category split contradicts it; it must account for a real share of the loss (at least a third of it), so a detail worth a tenth of a point is never offered as the reason for a mistake that costs a whole one; and points already decided (one side has 21 cards or 6 Coins) are not mentioned. At most two reasons are shown. When nothing survives, the review says honestly that nothing is obvious on the spot and names the scoring category the simulation loses most in. It never says what another player *actually* held: that would read as using hidden cards.
+
+**Where it appears.**
+
+- Hand-end screen: one line per person on the device (score ring, counts by class, "Review the hand"), pinned to the bottom with the Next-hand button so it never scrolls out of reach. A pending analysis never blocks the next hand.
+- Review screen: for each decision — what the others played since your previous move, the table, your cards at that moment with the card played and the better card ringed, the verdict with the average points lost, the reasons, and every legal move ranked by how far behind the best it is ("≈ equal" when the analysis cannot tell them apart). Move strip, Previous/Next, swipe, arrow keys; it opens on the costliest decision. Earlier hands of the match can be reopened from the scoreboard and at match end, where the match accuracy is also shown.
+- Nothing about a hand in progress is ever shown, and only finished hands can be opened: a grade is computed from the mover's hidden cards, so showing it mid-hand would leak information on a shared phone and coach the player everywhere else.
+- Settings → "Move analysis" (also in the in-game menu) switches the whole thing off.
+
+**Modes.** Vs computer: your moves. Pass-and-play: every person's moves, one line each at hand end and a switcher in the review (by then all cards are public). Online: each device analyses only its own seat from its own masked view; nothing is added to the network protocol and scores are not shared. Online, a move counts as yours only if this device recorded you tapping that very card at that point of the hand; moves the computer made for you while you were away are shown in the review but not scored.
+
+**When it runs.** Incrementally during play, in a second Web Worker, one decision at a time. No analysis is started while a computer player is thinking: its strength depends on how much it can compute in a fixed time, so the review must not compete with it. A decision is queued as soon as its position can be rebuilt on this device; on a shared phone some have to wait for the end of the hand. If the worker cannot start, the very same analysis runs on the UI thread (slower, same marks).
+
+**Persistence.** `scopone.reviews.v1` keeps the analysed hands of the current game (at most 12 hands) so a reload does not lose them; a different game replaces it. The record carries a version of the analysis, so verdicts from an older marking scale are never mixed with new ones. The key that identifies a local game is a one-way mix of its seed, not the seed itself.
+
+**Paywall seam.** `src/state/entitlements.ts` is the only place that decides whether `accuracy` (the score) and `review` (the move-by-move review) are available; today it answers yes to both. When `accuracy` is locked nothing is computed or stored and no score line appears; when only `review` is locked the score is shown, its line is labelled "Premium" and opens a locked screen — the natural place for an offer. Adding payments means implementing that one function; nothing else needs to know about plans. Both locked states can be tried today with `window.__scoponeLocked = ['review']` (or `['accuracy']`) in the browser console, and were tested that way.
+
+**Calibration and validation** (`npm run accuracy`; the analysed seat plays at that level, the other three play Medio). Preliminary figures, 24 hands per level, from the last full run before the scoring constants were fixed, re-scored with the final constants:
+
+| Level in the analysed seat | Mean hand score /10 |
+| --- | --- |
+| Facile | 6.0 |
+| Medio | 8.0 |
+| Difficile | 9.6 |
+
+- **Hidden-information check: pass.** Every decision analysed from the full state, the player's own view, shuffled hidden hands and the finished hand gave identical results.
+- **Precision:** standard error of a loss 0.03 points on average (90th percentile 0.06).
+- **Repeatability** (same decisions, different sampled deals): a move's accuracy moves by about 3 points of 100 on average, a hand's score by about 0.3 of 10 (90th percentile 0.6).
+- **Time per decision:** 0.3 s on average, 0.7 s at the 90th percentile, 2.2 s at worst (server CPU, shared with other jobs).
+- About 4 in 10 of the decisions measured as costing 0.3 points or more come with a concrete reason; the others are capped at "Inaccuracy" as described above.
+
+**Limitations.**
+
+- The "best move" is the opinion of a playout engine that assumes sensible but unsophisticated play from everyone and no signalling conventions. A strong player's deliberate convention play can be marked down. The noise allowance, the lenient second judge and the unexplained-loss cap reduce this; they do not remove it.
+- Simple playouts overstate what a slip costs when everyone afterwards plays well: in a check during development, with the rest of the hand played by the strongest AI, losses in the first seven rounds came out at roughly 40–75% of the predicted figure (and about in full in the last three rounds). No blanket correction is applied (a factor of 0.7 would show a missed scopa as 0.7 of a point); the allowance and the cap absorb part of it.
+- Outside the match-deciding guard above, the engine maximises the expected points of the hand, not the chance of winning the match.
+- A hand has at most ten decisions, so one hand's score is a coarse number (see the repeatability figure above); the match figure is steadier.
+- Only the people on the device are analysed, not the computer players or remote opponents.
+- Timings were measured on a server CPU, not on a phone.
+
 ## UI and interaction
 
 - **Tap or slide, then confirm.** Tap a card to select it (legal captures light up on the table, everything else dims), then press the button to play it. You can also hold and slide across the hand: the card under your thumb rises (with its captures previewed on the table) and the one you lift off is selected. Tapping the selected card again puts it back; a card is never played by tapping or dragging it. Sliding also works when it is not your turn, just to look at your cards — nothing is selected then. When several captures are possible they are listed as chips and tapping a highlighted table card cycles through the options.
@@ -135,12 +208,14 @@ To still satisfy "players receive only their own hand":
 | `scopone.game.v1` | The unfinished local game (seats, full match incl. RNG state). Saved after every move, removed when the match ends or is abandoned. Leaving a game keeps it; "Resume game" appears on the home screen. |
 | `scopone.identity.v1` | The device's key pair for online rooms. |
 | `scopone.host.v1` / `scopone.guest.v1` | The last room hosted / joined, for reopening or rejoining (ignored after 12 hours). |
+| `scopone.reviews.v1` | The move analyses of the current game (at most 12 hands), with the analysis version and a key identifying the game. Replaced when a different game starts. |
 
 ## What was verified, and how
 
-- `npm test`: 94 unit tests pass.
+- `npm test`: 120 unit tests pass.
 - `npm run simulate`: results above; zero rule violations or crashes.
 - `npm run build`: passes with no TypeScript errors.
 - Headless Chromium (Playwright, iPhone-sized viewports 390×844 and 375×667) against the dev server and the production build: full local games to hand end and match end, tutorial, multiple-capture selection, pass-and-play, settings, rules and glossary, Italian and English device languages, resume after reload, **service worker offline** (reload and play against Difficile with the network off), and the online flow described above between tabs.
+- Move accuracy and review, in the same headless browser: a hand against the computer (the score appears with the hand-end screen, the review opens on the costliest decision and steps through every move, in Italian and English), pass-and-play (one line per person, switcher in the review, nothing shown mid-hand, a reload resumes), online between tabs (host and guest each see only their own score; moves the computer played for an absent player are marked and unscored; nothing new on the wire), and both locked states of the paywall seam.
 
 **Not verified:** behaviour on a physical iPhone / real Safari (safe-area insets, the installed-app shell, audio unlock, background suspension), and the Supabase transport against a live project. Both are written to the documented platform behaviour but should be smoke-tested once after deployment.

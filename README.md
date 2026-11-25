@@ -7,6 +7,7 @@ Open the link, tap **Add to Home Screen**, and it behaves like a native app: ful
 - **Pass-and-play** – 2–4 people on one phone, with a "pass the phone" screen between turns.
 - **Online room** – the host creates a 5-character code, friends join with it; AIs fill empty seats and cover for anyone who drops.
 - Italian and English, three original card styles (Napoletane, Piacentine, Siciliane), illustrated rules, glossary, guided tutorial.
+- **Move accuracy and hand review** – after every hand a score out of 10 for how well you played, judged only on what you could know, and a move-by-move review showing the better move and why.
 
 Design choices and their reasons are in [DECISIONS.md](./DECISIONS.md).
 
@@ -35,6 +36,7 @@ npm run dev          # http://localhost:5173
 | `npm run preview` | Serve `dist/` locally (use this to try the service worker / offline mode) |
 | `npm test` | Unit tests (Vitest) |
 | `npm run simulate` | 1,000 AI-vs-AI games per matchup with an independent rule checker |
+| `npm run accuracy` | Calibrates and validates the move-accuracy analysis (see below) |
 | `npm run assets` | Regenerate icons and iOS splash screens (needs Playwright's Chromium; outputs are committed) |
 
 Everything except online rooms works with no configuration.
@@ -119,13 +121,20 @@ Good to know
 npm test
 ```
 
-94 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference) and the online encryption.
+120 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference), the online encryption, and the move analysis (positions rebuilt exactly as the player saw them, results unchanged when the hidden cards change, verdicts on clear-cut positions, the scoring arithmetic).
 
 ```bash
 npm run simulate                       # 1,000 games per matchup
 npm run simulate -- --games 200        # quicker
 npm run simulate -- --samples 60       # more Monte Carlo deals per Difficile decision
 ```
+
+```bash
+npm run accuracy                       # 40 hands per AI level
+npm run accuracy -- --hands 100
+```
+
+The accuracy script plays hands with each AI level in the analysed seat and reviews them exactly as the app would. It checks that the score ranks the levels (Facile < Medio < Difficile), that every decision gets an **identical** analysis from the full game state, from the player's own masked view, with the other three hands shuffled, and from the finished hand (so nothing hidden can be influencing it), how much the numbers move when the same decisions are re-analysed with different random deals, and how long a decision takes. It exits non-zero if the ranking or the hidden-information check fails.
 
 The simulator plays full matches headlessly, cycling through both variants and every rule toggle. After **every move** a checker written independently of the engine (brute-force capture enumeration, card conservation, turn order, scopa bookkeeping, re-computed hand scores and winner) verifies the result; any violation or crash makes the script exit non-zero. The latest results are recorded in DECISIONS.md.
 
@@ -135,6 +144,7 @@ The simulator plays full matches headlessly, cycling through both variants and e
 src/
   engine/     Pure rules engine (no UI): cards, seeded RNG, dealing, captures, scoring, match flow
   ai/         Facile / Medio / Difficile, the Web Worker and its main-thread client
+  analysis/   Move accuracy: positions as the player saw them, the analyser, scoring, explanations, its own worker
   game/       Controllers shared by the UI: display sequencing, local (vs computer / pass-and-play) games
   online/     Encryption, transports (Supabase / same-browser test), host and guest sessions
   cards/      Original SVG card art in three regional styles
@@ -144,6 +154,7 @@ src/
   audio/      Synthesised sound effects
 scripts/
   simulate.ts     Headless AI-vs-AI simulator with rule checker
+  accuracy.ts     Calibration and validation of the move-accuracy analysis
   gen-assets.mjs  Icon and splash-screen generator
 public/           Icons, favicon, iOS splash screens
 ```

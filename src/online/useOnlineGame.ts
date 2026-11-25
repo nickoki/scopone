@@ -33,6 +33,7 @@ export function useHostController(session: HostSession, speed: Speed, t: Dict): 
   // The host's speed paces the computer's moves for the whole table.
   useEffect(() => session.setSpeed(speed), [session, speed]);
 
+  const reviewSeats = useMemo(() => (mySeat === null ? [] : [mySeat]), [mySeat]);
   const online = lobby.players;
   const seats = useMemo(
     () => seatInfos(lobby, (id) => !online.find((p) => p.id === id)?.online),
@@ -62,6 +63,8 @@ export function useHostController(session: HostSession, speed: Speed, t: Dict): 
     spectator: mySeat === null,
     ready,
     readyUp,
+    gameKey: `host:${lobby.gameId}`,
+    reviewSeats,
     scopa: display.scopa,
   };
 }
@@ -74,6 +77,8 @@ export function useGuestController(session: GuestSession, speed: Speed, t: Dict)
   const play = useCallback((move: Move) => void session.play(move), [session]);
   const readyUp = useCallback(() => void session.ready(), [session]);
   const noop = useCallback(() => undefined, []);
+  const guestSeat = snap.seat;
+  const reviewSeats = useMemo(() => (guestSeat === null ? [] : [guestSeat]), [guestSeat]);
   if (!snap.view || !display.shown) return null;
   const settled = !display.busy;
   const view = display.shown;
@@ -104,6 +109,8 @@ export function useGuestController(session: GuestSession, speed: Speed, t: Dict)
     spectator: seat === null,
     ready,
     readyUp,
+    gameKey: `guest:${snap.gameId}:${seat ?? 'x'}`,
+    reviewSeats,
     scopa: display.scopa,
   };
 }

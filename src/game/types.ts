@@ -73,6 +73,10 @@ export interface GameController {
    */
   ready: ReadyGate | null;
   readyUp: () => void;
+  /** Identifies this game, so analyses saved for it are not mixed up with another game's. */
+  gameKey: string;
+  /** The seats played by people on this device: the ones whose moves are analysed and reviewed here. */
+  reviewSeats: Seat[];
   /** Last scopa shown (drives the banner); `key` changes for every new one. */
   scopa: { seat: number; key: number } | null;
 }

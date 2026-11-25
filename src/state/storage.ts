@@ -34,4 +34,5 @@ export const KEYS = {
   identity: 'scopone.identity.v1',
   hostRoom: 'scopone.host.v1',
   guestRoom: 'scopone.guest.v1',
+  reviews: 'scopone.reviews.v1',
 } as const;

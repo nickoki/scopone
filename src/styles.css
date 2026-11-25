@@ -2208,3 +2208,543 @@ p {
 .game.large-text .pile-count {
   font-size: 20px;
 }
+
+/* ------------------------------------------------- move accuracy and review */
+
+.score-ring {
+  flex: none;
+  display: block;
+}
+
+.ring-text {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-size: 15px;
+  fill: currentColor;
+}
+
+.ring-spin {
+  transform-origin: 24px 24px;
+  animation: ring-spin 1s linear infinite;
+}
+
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.accuracy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.accuracy-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px 8px 8px;
+  text-align: left;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #fffaf0;
+  color: var(--ink);
+}
+
+.accuracy-row:disabled {
+  cursor: default;
+}
+
+.accuracy-row:not(:disabled):active {
+  background: #fff3cf;
+}
+
+.accuracy-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.accuracy-text small {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+
+.accuracy-cta {
+  color: var(--terracotta-dark) !important;
+  font-weight: 700;
+}
+
+.class-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.class-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.class-count i {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 3px;
+  border-radius: 10px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.match-accuracy {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 12px;
+}
+
+.match-accuracy span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.match-accuracy small {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.review .scroll {
+  gap: 12px;
+  padding-top: 10px;
+}
+
+.rv-top {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+
+.rv-top .segmented {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.rv-top .segmented button {
+  color: var(--cream);
+}
+
+.rv-hands {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 17px;
+}
+
+.rv-hands .icon-btn {
+  width: 36px;
+  height: 36px;
+}
+
+.rv-flip {
+  display: inline-block;
+  transform: scaleX(-1);
+}
+
+.rv-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.rv-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.rv-summary small {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.rv-strip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 3px 2px 5px;
+  scrollbar-width: none;
+}
+
+.rv-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.rv-step {
+  flex: 1 1 0;
+  min-width: 26px;
+  max-width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border: 0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.1;
+  opacity: 0.72;
+  transition: transform 0.12s, opacity 0.12s;
+}
+
+.rv-step small {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.rv-step.on {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2.5px var(--cream), 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.rv-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.rv-detail h3 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.rv-verdict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid;
+}
+
+.rv-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.rv-verdict-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.rv-verdict-text b {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.rv-verdict-text small {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.rv-muted {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.rv-since {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rv-since li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.rv-who {
+  min-width: 62px;
+  font-weight: 700;
+}
+
+.rv-scopa {
+  font-family: var(--serif);
+  font-weight: 700;
+  color: var(--terracotta);
+}
+
+.rv-move {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.rv-move small {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-left: 2px;
+}
+
+.rv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 4px 0 5px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(58, 33, 20, 0.25);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.rv-chip.taken {
+  background: #ffe9a8;
+  box-shadow: inset 0 0 0 1.5px var(--gold);
+}
+
+.rv-arrow {
+  color: var(--terracotta);
+  font-size: 12px;
+}
+
+.rv-felt {
+  padding: 10px 8px;
+  border-radius: 12px;
+  background: linear-gradient(var(--felt), var(--felt-dark));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08), inset 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.rv-cards {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  /* room for the rings and the lift of the played card */
+  padding: 6px 4px 5px;
+}
+
+/* All the cards share one row and shrink together when there are many. */
+.rv-card {
+  position: relative;
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  aspect-ratio: 100 / 170;
+  border-radius: 7% / 4.2%;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.rv-card svg {
+  display: block;
+}
+
+.rv-card.played {
+  transform: translateY(-4px);
+}
+
+/* the better card: a dashed green ring, drawn on top so it also shows with the played ring */
+.rv-card.better::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2.5px dashed #4f8a34;
+  border-radius: 9px;
+  pointer-events: none;
+}
+
+.rv-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(58, 33, 20, 0.06);
+}
+
+.rv-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rv-label {
+  min-width: 62px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rv-label.better {
+  color: #4f8a34;
+}
+
+.rv-reasons {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.rv-all summary {
+  font-weight: 700;
+  padding: 6px 0;
+  color: var(--ink-soft);
+}
+
+.rv-all ul {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rv-option {
+  display: grid;
+  grid-template-columns: 1fr auto 50px 54px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 9px;
+}
+
+.rv-option.played {
+  background: #fff3cf;
+}
+
+.rv-tags {
+  display: flex;
+  gap: 3px;
+}
+
+.rv-tag {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 6px;
+  color: #fff;
+}
+
+.rv-tag.best {
+  background: #4f8a34;
+}
+
+.rv-tag.you {
+  background: var(--ink-soft);
+}
+
+.rv-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(58, 33, 20, 0.12);
+  overflow: hidden;
+}
+
+.rv-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--olive);
+}
+
+.rv-ev {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.rv-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* Hand-end dialog: the accuracy line and the button stay pinned while the tables scroll. */
+.hand-end-foot {
+  position: sticky;
+  bottom: -18px;
+  margin: 12px -18px -18px;
+  padding: 2px 18px 18px;
+  background: var(--paper);
+  box-shadow: 0 -10px 12px -10px rgba(58, 33, 20, 0.28);
+}
+
+.hand-end-foot .accuracy-block {
+  margin-top: 8px;
+}
+
+.hand-end-foot .btn,
+.hand-end-foot .note {
+  margin-top: 10px;
+}
+
+@media (max-height: 700px) {
+  .hand-end .running-team .big {
+    font-size: 30px;
+  }
+  .hand-end .running {
+    margin-top: 10px;
+    padding: 6px 10px;
+  }
+  .hand-end .primiera-detail {
+    display: none;
+  }
+}

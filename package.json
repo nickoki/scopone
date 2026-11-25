@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "simulate": "tsx scripts/simulate.ts",
-    "assets": "node scripts/gen-assets.mjs"
+    "assets": "node scripts/gen-assets.mjs",
+    "accuracy": "tsx scripts/accuracy.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",

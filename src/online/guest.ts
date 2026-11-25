@@ -32,6 +32,8 @@ export interface GuestSnapshot {
   seats: SeatInfo[];
   /** Start of a hand: which seats are ready. */
   ready: boolean[];
+  /** Identifies the match in progress (changes on a rematch). */
+  gameId: number;
 }
 
 const HOST_WAIT_MS = 7000;
@@ -55,6 +57,7 @@ export class GuestSession {
     seat: null,
     seats: [],
     ready: [true, true, true, true],
+    gameId: 0,
   };
   private host: PresenceMeta | null = null;
   private key: CryptoKey | null = null;
@@ -174,6 +177,7 @@ export class GuestSession {
           seat: state.seat,
           seats: state.seats,
           ready: Array.isArray(state.ready) ? state.ready : [true, true, true, true],
+          gameId: state.gameId,
           phase: 'playing',
         });
       } catch {
