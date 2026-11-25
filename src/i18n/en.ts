@@ -256,7 +256,7 @@ export const en: Dict = {
     analysingN: (done: number, total: number) => `Analysing… ${done}/${total}`,
     noDecisions: 'No real choice in this hand.',
     autoMove: 'Played by the computer while you were away: not counted in the score.',
-    forcedMove: 'You had only one legal move: not counted in the score.',
+    forcedMove: 'Only one legal move: not counted in the score.',
     samples: (n: number) => `Estimated over ${n} possible deals of the hidden cards.`,
     open: 'Review the hand',
     openAll: 'Review the hands played',

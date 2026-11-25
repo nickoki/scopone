@@ -257,7 +257,7 @@ export const it = {
     analysingN: (done: number, total: number) => `Analisi in corso… ${done}/${total}`,
     noDecisions: 'Nessuna vera scelta in questa mano.',
     autoMove: 'Giocata dal computer mentre eri assente: non conta nel voto.',
-    forcedMove: 'Avevi una sola mossa possibile: non conta nel voto.',
+    forcedMove: 'Una sola mossa possibile: non conta nel voto.',
     samples: (n: number) => `Stima su ${n} distribuzioni possibili delle carte coperte.`,
     open: 'Rivedi la mano',
     openAll: 'Rivedi le mani giocate',
