@@ -157,19 +157,22 @@ export interface LayoutInput {
   anim: CaptureAnim | null;
   perspective: number;
   g: Geometry;
-  selected: CardId | null;
+  /** Hand card drawn lifted out of the fan (selected, or under the thumb). */
+  raised: CardId | null;
   /** True while the deal animation should be applied to newly mounted cards. */
   dealing: boolean;
+  /** Delay between two dealt cards, ms. */
+  dealStep: number;
 }
 
-export function computeSprites({ view, anim, perspective, g, selected, dealing }: LayoutInput): Sprite[] {
+export function computeSprites({ view, anim, perspective, g, raised, dealing, dealStep }: LayoutInput): Sprite[] {
   const hand = view.hand;
   const prefix = `${view.handNumber}:`;
   const sprites: Sprite[] = [];
   const rel = (seat: number) => (seat - perspective + 4) & 3;
   const dealerPose: Pose = { ...g.seat[rel(hand.dealer)]!, rot: 0, scale: g.otherScale };
   const perHand = Math.max(...hand.hands.map((h) => h.length), 1);
-  const dealDelay = (seat: number, i: number) => (i * 4 + ((seat - hand.dealer + 3) & 3)) * 32;
+  const dealDelay = (seat: number, i: number) => (i * 4 + ((seat - hand.dealer + 3) & 3)) * dealStep;
   const seatCentre = (seat: number): Pose => ({
     ...g.seat[rel(seat)]!,
     rot: rel(seat) === 1 ? -90 : rel(seat) === 3 ? 90 : 0,
@@ -191,7 +194,7 @@ export function computeSprites({ view, anim, perspective, g, selected, dealing }
     // Keep the fan's shape while a card is in flight from a visible hand.
     const n = order.length;
     order.forEach((card, i) => {
-      const pose = r === 0 ? bottomHandPose(i, n, g, card === selected && card !== HIDDEN) : otherHandPose(r, i, n, g);
+      const pose = r === 0 ? bottomHandPose(i, n, g, card === raised && card !== HIDDEN) : otherHandPose(r, i, n, g);
       sprites.push({
         ...pose,
         key: card === HIDDEN ? `${prefix}h${seat}:${i}` : `${prefix}${card}`,
@@ -211,7 +214,7 @@ export function computeSprites({ view, anim, perspective, g, selected, dealing }
     const pose = slots.poses[i]!;
     let fly: Sprite['fly'];
     if (dealing && hand.initialTable.includes(card)) {
-      fly = { ...dealerPose, delay: perHand * 4 * 32 + i * 60 };
+      fly = { ...dealerPose, delay: perHand * 4 * dealStep + i * dealStep * 2 };
     } else if (last && last.card === card && (rel(last.seat) !== 0 || hand.hands[last.seat]![0] === HIDDEN)) {
       // Laid down by a player whose hand is face down: it flies in from their seat.
       fly = { ...seatCentre(last.seat), delay: 0 };

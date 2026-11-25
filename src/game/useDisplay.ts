@@ -21,16 +21,25 @@ export interface Display {
 }
 
 export interface DisplayTimings {
+  /** How long a capturing card rests on what it takes. */
   show: number;
+  /** Cards sliding into the pile. */
   collect: number;
+  /** A card being laid on the table. */
   lay: number;
+  /** The whole deal. */
   deal: number;
   handEnd: number;
+  /** Duration of one card movement (CSS transition), ms. */
+  move: number;
+  /** Delay between two dealt cards, ms. */
+  dealStep: number;
 }
 
-export const TIMINGS: Record<'normal' | 'fast', DisplayTimings> = {
-  normal: { show: 720, collect: 420, lay: 420, deal: 1900, handEnd: 700 },
-  fast: { show: 420, collect: 300, lay: 280, deal: 1750, handEnd: 450 },
+export const TIMINGS: Record<'slow' | 'normal' | 'fast', DisplayTimings> = {
+  slow: { show: 1500, collect: 850, lay: 900, deal: 3200, handEnd: 1000, move: 800, dealStep: 55 },
+  normal: { show: 720, collect: 420, lay: 420, deal: 1900, handEnd: 700, move: 420, dealStep: 32 },
+  fast: { show: 420, collect: 300, lay: 320, deal: 1400, handEnd: 450, move: 300, dealStep: 24 },
 };
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

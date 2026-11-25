@@ -19,6 +19,11 @@ const COURTS: Record<number, Court> = { 8: 'fante', 9: 'cavallo', 10: 're' };
 
 /** Shrinks the art towards the bottom-right so the corner index never covers it. */
 const INDEX_SHIFT = 'translate(8 16.5) scale(0.9)';
+/** The large index (for players who need bigger numbers) is 1.75x the normal one. */
+const LARGE_INDEX_SCALE = 1.75;
+const LARGE_INDEX_SHIFT = 'translate(21 36) scale(0.79)';
+/** Double-headed courts normally fill the frame; with the large index they shrink a little too. */
+const LARGE_INDEX_SHIFT_BUST = 'translate(14 24) scale(0.86)';
 
 function paper(t: Theme): ReactNode {
   return <rect x={0.5} y={0.5} width={CARD_W - 1} height={CARD_H - 1} rx={7} fill={t.paper} stroke={t.edge} strokeWidth={1} />;
@@ -55,7 +60,7 @@ function indexChip(t: Theme, suit: Suit, rank: number): ReactNode {
   );
 }
 
-function faceArt(style: CardStyle, card: number, showIndex: boolean): ReactNode {
+function faceArt(style: CardStyle, card: number, showIndex: boolean, large: boolean): ReactNode {
   const t = THEMES[style];
   const suit = suitOf(card);
   const rank = rankOf(card);
@@ -70,16 +75,17 @@ function faceArt(style: CardStyle, card: number, showIndex: boolean): ReactNode 
         {courtArt(t, suit, court, true)}
       </svg>
     );
-    art = (
+    const busts = (
       <>
         {half}
         <g transform="rotate(180 50 85)">{half}</g>
         <path d="M4 85H96" stroke={t.ink} strokeWidth={1.4} />
       </>
     );
+    art = showIndex && large ? <g transform={LARGE_INDEX_SHIFT_BUST}>{busts}</g> : busts;
   } else {
     const inner = court ? courtArt(t, suit, court, false) : pipArt(t, suit, rank);
-    const transform = `${showIndex ? INDEX_SHIFT : ''} ${fit}`.trim();
+    const transform = `${showIndex ? (large ? LARGE_INDEX_SHIFT : INDEX_SHIFT) : ''} ${fit}`.trim();
     art = transform ? <g transform={transform}>{inner}</g> : inner;
   }
 
@@ -88,7 +94,12 @@ function faceArt(style: CardStyle, card: number, showIndex: boolean): ReactNode 
       {paper(t)}
       {frame(t)}
       {art}
-      {showIndex && indexChip(t, suit, rank)}
+      {showIndex &&
+        (large ? (
+          <g transform={`translate(3 3) scale(${LARGE_INDEX_SCALE}) translate(-3 -3)`}>{indexChip(t, suit, rank)}</g>
+        ) : (
+          indexChip(t, suit, rank)
+        ))}
     </>
   );
 }
@@ -96,11 +107,11 @@ function faceArt(style: CardStyle, card: number, showIndex: boolean): ReactNode 
 /** Card art never changes, so each face is built once and the element tree reused. */
 const faceCache = new Map<string, ReactNode>();
 
-function cachedFace(style: CardStyle, card: number, showIndex: boolean): ReactNode {
-  const key = `${style}:${card}:${showIndex ? 1 : 0}`;
+function cachedFace(style: CardStyle, card: number, showIndex: boolean, large: boolean): ReactNode {
+  const key = `${style}:${card}:${showIndex ? (large ? 2 : 1) : 0}`;
   let art = faceCache.get(key);
   if (art === undefined) {
-    art = faceArt(style, card, showIndex);
+    art = faceArt(style, card, showIndex, large);
     faceCache.set(key, art);
   }
   return art;
@@ -110,9 +121,11 @@ export interface CardFaceProps {
   card: number;
   style: CardStyle;
   showIndex?: boolean;
+  /** With `showIndex`: draw the corner index much larger (easier to read). */
+  largeIndex?: boolean;
 }
 
-function CardFaceImpl({ card, style, showIndex = false }: CardFaceProps): JSX.Element {
+function CardFaceImpl({ card, style, showIndex = false, largeIndex = false }: CardFaceProps): JSX.Element {
   const id = Math.min(39, Math.max(0, Math.trunc(card) || 0));
   return (
     <svg
@@ -123,7 +136,7 @@ function CardFaceImpl({ card, style, showIndex = false }: CardFaceProps): JSX.El
       role="img"
       aria-label={`${RANK_NAMES[rankOf(id)]} di ${suitOf(id)}`}
     >
-      {cachedFace(style in THEMES ? style : 'napoletane', id, showIndex)}
+      {cachedFace(style in THEMES ? style : 'napoletane', id, showIndex, largeIndex)}
     </svg>
   );
 }

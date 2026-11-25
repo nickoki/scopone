@@ -1,5 +1,6 @@
 import { CardFace, SuitIcon, type CardStyle } from '../../cards';
 import { rankOf, suitOf, type CardId } from '../../engine';
+import { useSettings } from '../../state/settings';
 
 /** A row of small face-up cards (used in dialogs and in the rules). */
 export function MiniCards({
@@ -15,6 +16,7 @@ export function MiniCards({
   showIndex?: boolean;
   highlight?: readonly CardId[];
 }) {
+  const largeIndex = useSettings().settings.largeText && showIndex;
   return (
     <span className="mini-cards">
       {cards.map((c, i) =>
@@ -26,7 +28,7 @@ export function MiniCards({
             className={`mini-card${highlight?.includes(c) ? ' hl' : ''}`}
             style={{ width, height: width * 1.7 }}
           >
-            <CardFace card={c} style={cardStyle} showIndex={showIndex} />
+            <CardFace card={c} style={cardStyle} showIndex={showIndex} largeIndex={largeIndex} />
           </span>
         ),
       )}

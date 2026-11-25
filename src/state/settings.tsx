@@ -5,13 +5,15 @@ import { KEYS, loadJson, saveJson } from './storage';
 
 export type LanguageSetting = 'auto' | 'it' | 'en';
 export type Lang = 'it' | 'en';
-export type Speed = 'normal' | 'fast';
+export type Speed = 'slow' | 'normal' | 'fast';
 
 export interface Settings {
   language: LanguageSetting;
   cardStyle: CardStyle;
   /** Small rank/suit index in the card corner. */
   showIndex: boolean;
+  /** Bigger values on the cards and in the last-play markers (implies the index). */
+  largeText: boolean;
   sound: boolean;
   speed: Speed;
   rules: Rules;
@@ -24,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'auto',
   cardStyle: 'napoletane',
   showIndex: true,
+  largeText: false,
   sound: true,
   speed: 'normal',
   rules: DEFAULT_RULES,
@@ -41,11 +44,13 @@ export function sanitizeSettings(raw: unknown): Settings {
   if (r.language === 'it' || r.language === 'en' || r.language === 'auto') s.language = r.language;
   if (typeof r.cardStyle === 'string' && CARD_STYLE_VALUES.includes(r.cardStyle)) s.cardStyle = r.cardStyle;
   if (typeof r.showIndex === 'boolean') s.showIndex = r.showIndex;
+  if (typeof r.largeText === 'boolean') s.largeText = r.largeText;
   if (typeof r.sound === 'boolean') s.sound = r.sound;
-  if (r.speed === 'normal' || r.speed === 'fast') s.speed = r.speed;
+  if (r.speed === 'slow' || r.speed === 'normal' || r.speed === 'fast') s.speed = r.speed;
   if (typeof r.playerName === 'string') s.playerName = r.playerName.slice(0, 14);
   if (typeof r.tutorialOffered === 'boolean') s.tutorialOffered = r.tutorialOffered;
   s.rules = sanitizeRules(r.rules);
+  if (s.largeText) s.showIndex = true;
   return s;
 }
 
@@ -96,7 +101,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const update = useCallback((patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch })), []);
+  const update = useCallback(
+    (patch: Partial<Settings>) =>
+      setSettings((s) => {
+        const next = { ...s, ...patch };
+        // Large numbers are drawn in the corner index, so the two go together.
+        if (patch.largeText) next.showIndex = true;
+        else if (patch.showIndex === false) next.largeText = false;
+        return next;
+      }),
+    [],
+  );
   const updateRules = useCallback(
     (patch: Partial<Rules>) => setSettings((s) => ({ ...s, rules: { ...s.rules, ...patch } })),
     [],

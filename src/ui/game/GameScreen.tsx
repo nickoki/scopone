@@ -14,6 +14,7 @@ import {
 } from '../../engine';
 import type { GameController } from '../../game/types';
 import { useT } from '../../i18n';
+import { TIMINGS } from '../../game/useDisplay';
 import { useSettings } from '../../state/settings';
 import { Icon, IconButton, Modal, Segmented, Toggle } from '../common';
 import { HowTo } from '../HowTo';
@@ -57,7 +58,10 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   const [boardRef, size] = useSize();
 
   const [selected, setSelected] = useState<CardId | null>(null);
+  /** Hand card under the thumb while it slides across the fan. */
+  const [hover, setHover] = useState<CardId | null>(null);
   const [optIndex, setOptIndex] = useState(0);
+  const timings = TIMINGS[settings.speed];
   const [dialog, setDialog] = useState<'menu' | 'score' | 'trick' | 'howto' | 'quit' | null>(null);
 
   const myTeam = teamOf(perspective);
@@ -75,31 +79,44 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   // Selection only makes sense while it is our turn.
   const canAct = ctl.canAct && view.phase === 'playing';
   useEffect(() => {
-    if (!canAct) setSelected(null);
-  }, [canAct, hand.history.length, view.handNumber]);
+    if (!canAct && !ctl.busy) setSelected(null);
+  }, [canAct, ctl.busy, hand.history.length, view.handNumber]);
+  useEffect(() => setHover(null), [perspective, view.handNumber]);
 
   const myCards = hand.hands[perspective]!;
+  // The card whose captures are previewed: the one under the thumb, else the selected one.
+  const active = canAct ? (hover ?? selected) : null;
   const options = useMemo(
-    () => (selected !== null && myCards.includes(selected) ? capturesFor(selected, hand.table) : []),
-    [selected, hand.table, myCards],
+    () => (active !== null && myCards.includes(active) ? capturesFor(active, hand.table) : []),
+    [active, hand.table, myCards],
   );
-  const option = options.length > 0 ? options[Math.min(optIndex, options.length - 1)]! : [];
+  const option = options.length > 0 ? options[hover !== null ? 0 : Math.min(optIndex, options.length - 1)]! : [];
+  const choosing = canAct && selected !== null && hover === null;
+  // A played card leaves the hand: forget the selection then, not before, so it
+  // travels to the table from where it was instead of dropping back first.
+  useEffect(() => {
+    if (selected !== null && !myCards.includes(selected)) setSelected(null);
+  }, [selected, myCards]);
 
   const play = () => {
-    if (selected === null || !canAct) return;
+    if (!choosing || selected === null) return;
+    // The card stays lifted until it has actually left the hand (see the effect below).
     ctl.play({ card: selected, capture: option });
-    setSelected(null);
   };
-  const onHandTap = (card: CardId) => {
+  // Holding and sliding across the hand lifts each card in turn (also when it is
+  // not our turn, just to look); the card the thumb lifts from becomes selected.
+  const onHandHover = (card: CardId | null) => {
     unlockAudio();
+    if (card !== null) playSound('select');
+    setHover(card);
+  };
+  const onHandPick = (card: CardId, tap: boolean) => {
     if (!canAct) return;
-    if (card === selected) {
+    if (tap && card === selected) {
       // A second tap puts the card back; playing always goes through the button.
-      playSound('select');
       setSelected(null);
       return;
     }
-    playSound('select');
     setSelected(card);
     setOptIndex(0);
   };
@@ -138,7 +155,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   }, [hand.history, ctl.anim]);
 
   const marks: BoardMarks = {
-    selected,
+    raised: hover ?? selected,
     strong: option,
     weak: options.flat().filter((c) => !option.includes(c)),
     hints: hints.cap,
@@ -166,8 +183,14 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   // ----- status line
   const turnSeat = hand.turn;
   let status: string;
+  // Start-of-hand gate: everybody looks at their cards and presses Ready.
+  const gate = view.phase === 'playing' ? ctl.ready : null;
   if (view.phase !== 'playing') status = '';
   else if (ctl.busy && hand.history.length === 0) status = t.game.dealing;
+  else if (gate) {
+    const waitingFor = seats.filter((_, i) => !gate.seats[i]).map((s) => s.name);
+    status = gate.canReady ? '' : t.game.waitingReady(waitingFor.join(', '));
+  }
   else if (canAct) status = selected === null ? t.game.yourTurn : '';
   else if (ctl.thinking !== null) status = t.game.thinking(names[ctl.thinking]!);
   else if (turnSeat === perspective && usThem) status = t.game.yourTurn;
@@ -176,8 +199,9 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   // ----- tutorial coach
   let coach: string | null = null;
   if (ctl.tutorial && view.phase === 'playing' && ctl.passTo === null) {
-    if (!canAct) coach = t.tutorial.wait;
-    else if (selected === null) {
+    if (gate) coach = gate.canReady ? t.tutorial.ready : t.tutorial.wait;
+    else if (!canAct) coach = t.tutorial.wait;
+    else if (active === null) {
       if (hints.sweep.length > 0) coach = t.tutorial.canScopa;
       else if (hints.cap.some((c) => capturesFor(c, hand.table).some((o) => o.includes(SETTEBELLO)))) coach = t.tutorial.settebello;
       else if (hints.cap.length > 0) coach = t.tutorial.canCapture;
@@ -185,7 +209,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
     } else if (options.length === 0) coach = t.tutorial.selectedLay;
     else if (options.length > 1) coach = t.tutorial.selectedMulti;
     else if (option.length === hand.table.length) coach = t.tutorial.selectedScopa;
-    else if (option.length === 1 && rankOf(option[0]!) === rankOf(selected)) coach = `${t.tutorial.selectedRank} ${t.tutorial.confirm}`;
+    else if (option.length === 1 && rankOf(option[0]!) === rankOf(active)) coach = `${t.tutorial.selectedRank} ${t.tutorial.confirm}`;
     else coach = `${t.tutorial.selectedSum} ${t.tutorial.confirm}`;
   }
 
@@ -195,7 +219,11 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
   const scopaSeat = ctl.scopa;
 
   return (
-    <div className="game" onPointerDown={unlockAudio}>
+    <div
+      className={`game${settings.largeText ? ' large-text' : ''}`}
+      style={{ '--move': `${timings.move}ms` } as React.CSSProperties}
+      onPointerDown={unlockAudio}
+    >
       <header className="topbar">
         <IconButton icon="menu" label={t.game.menu} onClick={() => setDialog('menu')} />
         <button type="button" className="score-pill" onClick={() => setDialog('score')} aria-label={t.game.scoreboard}>
@@ -280,6 +308,9 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                   <span className="seat-meta">
                     {info.away ? <i className="tag away">{t.game.awayTag}</i> : info.kind === 'ai' ? <i className="tag">{t.game.aiTag}</i> : null}
                     {hand.dealer === seat && <i className="tag dealer" title={t.game.dealer}>M</i>}
+                    {gate && !ctl.busy && info.kind === 'human' && !info.away && (
+                      <i className={`tag ${gate.seats[seat] ? 'ready' : 'wait'}`}>{gate.seats[seat] ? '✓' : '…'}</i>
+                    )}
                     <b>{hand.hands[seat]!.length}</b>
                   </span>
                 </div>
@@ -307,6 +338,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                   scopaLabel={t.game.scopa}
                   label={t.game.lastActionOf(names[seat]!)}
                   variant={r === 2 ? 'row' : 'col'}
+                  large={settings.largeText}
                   style={style}
                 />
               );
@@ -319,9 +351,12 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
               g={g}
               cardStyle={settings.cardStyle}
               showIndex={settings.showIndex}
+              largeIndex={settings.largeText}
               interactive={canAct}
               marks={marks}
-              onHandTap={onHandTap}
+              dealStep={timings.dealStep}
+              onHandHover={onHandHover}
+              onHandPick={onHandPick}
               onTableTap={onTableTap}
             />
 
@@ -344,10 +379,10 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
 
             {/* action bar */}
             <div
-              className={`action-bar${canAct && selected !== null ? ' choosing' : ''}`}
+              className={`action-bar${choosing ? ' choosing' : ''}`}
               style={{ bottom: g.handZone, height: g.actionH }}
             >
-              {canAct && selected !== null ? (
+              {choosing ? (
                 <>
                   {options.length > 1 && (
                     <div className="options" aria-label={t.game.chooseCapture}>
@@ -379,13 +414,20 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
                       scopaLabel={t.game.scopa}
                       label={t.game.lastActionOf(names[perspective]!)}
                       variant="me"
+                      large={settings.largeText}
                     />
                   )}
-                  <div className={`status${canAct ? ' mine' : ''}`}>
-                    {hand.dealer === perspective && view.phase === 'playing' && <i className="tag dealer">M</i>}
-                    <span>{status}</span>
-                    {ctl.spectator && <small>{t.game.spectating}</small>}
-                  </div>
+                  {gate && gate.canReady && !ctl.busy ? (
+                    <button type="button" className="btn primary ready-btn" onClick={ctl.readyUp}>
+                      {t.game.ready}
+                    </button>
+                  ) : (
+                    <div className={`status${canAct ? ' mine' : ''}`}>
+                      {hand.dealer === perspective && view.phase === 'playing' && <i className="tag dealer">M</i>}
+                      <span>{status}</span>
+                      {ctl.spectator && <small>{t.game.spectating}</small>}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -397,7 +439,7 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
         <div className="pass-screen">
           <Icon name="phone" size={56} />
           <p className="eyebrow">{t.pass.title}</p>
-          <h2>{t.pass.to(names[ctl.passTo]!)}</h2>
+          <h2>{gate ? t.pass.look(names[ctl.passTo]!) : t.pass.to(names[ctl.passTo]!)}</h2>
           <p>{t.pass.body}</p>
           <button type="button" className="btn primary big" onClick={() => { unlockAudio(); ctl.reveal(); }}>
             {t.pass.reveal}
@@ -440,6 +482,19 @@ export function GameScreen({ ctl, onExit, onAbandon, onRematch, menuExtra }: Gam
             <Toggle label={t.settings.sound} checked={settings.sound} onChange={(v) => update({ sound: v })} />
             <Toggle label={t.setup.tutorial} hint={t.setup.tutorialHint} checked={ctl.tutorial} onChange={ctl.setTutorial} />
             <Toggle label={t.settings.showIndex} checked={settings.showIndex} onChange={(v) => update({ showIndex: v })} />
+            <Toggle label={t.settings.largeText} hint={t.settings.largeTextHint} checked={settings.largeText} onChange={(v) => update({ largeText: v })} />
+            <div className="row col">
+              <span className="row-label">{t.settings.speed}</span>
+              <Segmented
+                options={[
+                  { value: 'slow', label: t.settings.speedSlow },
+                  { value: 'normal', label: t.settings.speedNormal },
+                  { value: 'fast', label: t.settings.speedFast },
+                ]}
+                value={settings.speed}
+                onChange={(speed) => update({ speed })}
+              />
+            </div>
             <div className="row col">
               <span className="row-label">{t.settings.cardStyle}</span>
               <Segmented

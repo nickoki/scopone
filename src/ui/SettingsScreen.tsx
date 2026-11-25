@@ -62,6 +62,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             checked={settings.showIndex}
             onChange={(showIndex) => update({ showIndex })}
           />
+          <Toggle
+            label={t.settings.largeText}
+            hint={t.settings.largeTextHint}
+            checked={settings.largeText}
+            onChange={(largeText) => update({ largeText })}
+          />
         </Section>
 
         <Section title={t.settings.gameRules} note={t.settings.rulesNote}>
@@ -71,10 +77,14 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         <Section>
           <Toggle label={t.settings.sound} checked={settings.sound} onChange={(sound) => update({ sound })} />
           <div className="row col">
-            <span className="row-label">{t.settings.speed}</span>
+            <span className="row-text">
+              <span className="row-label">{t.settings.speed}</span>
+              <span className="row-hint">{t.settings.speedHint}</span>
+            </span>
             <Segmented
               label={t.settings.speed}
               options={[
+                { value: 'slow', label: t.settings.speedSlow },
                 { value: 'normal', label: t.settings.speedNormal },
                 { value: 'fast', label: t.settings.speedFast },
               ]}

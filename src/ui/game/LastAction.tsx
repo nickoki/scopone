@@ -2,11 +2,11 @@ import type { CSSProperties } from 'react';
 import { SuitIcon, type CardStyle } from '../../cards';
 import { rankOf, suitOf, type CardId, type PlayedMove } from '../../engine';
 
-function Chip({ card, cardStyle, taken }: { card: CardId; cardStyle: CardStyle; taken?: boolean }) {
+function Chip({ card, cardStyle, taken, size }: { card: CardId; cardStyle: CardStyle; taken?: boolean; size: number }) {
   return (
     <span className={`la-chip${taken ? ' taken' : ''}`}>
       <b>{rankOf(card)}</b>
-      <SuitIcon suit={suitOf(card)} style={cardStyle} size={13} />
+      <SuitIcon suit={suitOf(card)} style={cardStyle} size={size} />
     </span>
   );
 }
@@ -23,6 +23,7 @@ export function LastAction({
   scopaLabel,
   label,
   variant,
+  large,
   style,
 }: {
   move: PlayedMove;
@@ -31,13 +32,16 @@ export function LastAction({
   /** Accessible description, e.g. "Rosa: last play". */
   label: string;
   variant: 'col' | 'row' | 'me';
+  /** Bigger chips for players who need larger text. */
+  large?: boolean;
   style?: CSSProperties;
 }) {
   const took = move.captured.length > 0;
+  const size = large ? 19 : 13;
   return (
-    <div className={`last-action ${variant}${took ? ' took' : ''}`} style={style} role="status" aria-label={label}>
+    <div className={`last-action ${variant}${took ? ' took' : ''}${large ? ' large' : ''}`} style={style} role="status" aria-label={label}>
       <span className="la-played">
-        <Chip card={move.card} cardStyle={cardStyle} />
+        <Chip card={move.card} cardStyle={cardStyle} size={size} />
         {took && (
           <span className="la-arrow" aria-hidden="true">
             ➜
@@ -47,7 +51,7 @@ export function LastAction({
       {took && (
         <span className="la-taken">
           {move.captured.map((c) => (
-            <Chip key={c} card={c} cardStyle={cardStyle} taken />
+            <Chip key={c} card={c} cardStyle={cardStyle} size={size} taken />
           ))}
         </span>
       )}

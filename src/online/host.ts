@@ -29,7 +29,7 @@ import {
   type LobbySeat,
   type StateMsg,
 } from './protocol';
-import type { PresenceMeta, Transport, TransportStatus } from './transport';
+import { PROTOCOL_VERSION, type PresenceMeta, type Transport, type TransportStatus } from './transport';
 
 export interface SavedHostRoom {
   code: string;
@@ -48,6 +48,8 @@ export interface HostSnapshot {
   match: MatchState | null;
   mySeat: Seat | null;
   thinking: Seat | null;
+  /** Start of a hand: which seats are ready (computer and absent seats always are). */
+  ready: boolean[];
 }
 
 interface Peer {
@@ -59,8 +61,9 @@ interface Peer {
 
 /** How long a dropped player's seat waits before the computer covers for them. */
 const AWAY_GRACE_MS = 5000;
-const AI_DELAY_MS = 1250;
-const AI_DELAY_DEAL_MS = 2700;
+/** Pause before a computer move / time the deal animation needs, by game speed. */
+const AI_DELAY_MS = { slow: 2600, normal: 1250, fast: 900 } as const;
+const DEAL_MS = { slow: 3600, normal: 2700, fast: 2000 } as const;
 const AUTO_SEAT_ORDER = [1, 2, 3];
 
 export class HostSession {
@@ -71,6 +74,11 @@ export class HostSession {
   private aiTimer: ReturnType<typeof setTimeout> | null = null;
   private aiToken = 0;
   private closed = false;
+  private speed: keyof typeof AI_DELAY_MS = 'normal';
+  private handStartedAt = 0;
+  /** Seats that pressed Ready, and the hand (`gameId:handNumber`) they did it for. */
+  private readySet = new Set<number>();
+  private readyKey = '';
 
   constructor(
     private transport: Transport,
@@ -95,8 +103,18 @@ export class HostSession {
       players: [],
     };
     lobby.players = [{ id: identity.id, name, online: true, host: true }];
-    this.snapshot = { role: 'host', status: 'connecting', error: null, lobby, match: restore?.match ?? null, mySeat: null, thinking: null };
+    this.snapshot = {
+      role: 'host',
+      status: 'connecting',
+      error: null,
+      lobby,
+      match: restore?.match ?? null,
+      mySeat: null,
+      thinking: null,
+      ready: [true, true, true, true],
+    };
     this.snapshot.mySeat = this.seatOf(identity.id);
+    this.snapshot.ready = this.readyFlags();
   }
 
   // ------------------------------------------------------------ store API
@@ -109,6 +127,7 @@ export class HostSession {
   private set(patch: Partial<HostSnapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch };
     this.snapshot.mySeat = this.seatOf(this.identity.id);
+    this.snapshot.ready = this.readyFlags();
     this.persist();
     for (const fn of this.listeners) fn();
   }
@@ -126,11 +145,48 @@ export class HostSession {
 
   private isOffline = (id: string): boolean => id !== this.identity.id && !this.peers.get(id)?.online;
 
+  // ---------------------------------------------------- start-of-hand gate
+  /** Per seat: ready for the current hand. Computer seats and absent players never hold the table up. */
+  private readyFlags(): boolean[] {
+    const { match, lobby } = this.snapshot;
+    const key = match ? `${lobby.gameId}:${match.handNumber}` : '';
+    if (key !== this.readyKey) {
+      this.readyKey = key;
+      this.readySet = new Set();
+    }
+    // A guest still running a version without the Ready button must not block the table.
+    const cannotReady = (id: string) => id !== this.identity.id && (this.peers.get(id)?.meta.v ?? 1) < 2;
+    return lobby.seats.map(
+      (s, i) => s.kind === 'ai' || this.isOffline(s.id) || cannotReady(s.id) || this.readySet.has(i),
+    );
+  }
+
+  /** True once play may proceed: a card has been played, or everybody is ready. */
+  private gateOpen(): boolean {
+    const match = this.snapshot.match;
+    if (!match || match.phase !== 'playing' || match.hand.history.length > 0) return true;
+    return this.readyFlags().every(Boolean);
+  }
+
+  private markReady(seat: number): void {
+    this.readyFlags(); // make sure the set belongs to the current hand
+    if (this.readySet.has(seat)) return;
+    this.readySet.add(seat);
+    this.set({});
+    this.broadcastStates();
+    this.tick();
+  }
+
+  /** Animation speed chosen on the host's device: paces the computer's moves for everyone. */
+  setSpeed(speed: keyof typeof AI_DELAY_MS): void {
+    this.speed = speed;
+  }
+
   // ------------------------------------------------------------ lifecycle
   start(): void {
     this.transport.join(
       this.snapshot.lobby.code,
-      { id: this.identity.id, name: this.name, pub: this.identity.pub, host: true },
+      { id: this.identity.id, name: this.name, pub: this.identity.pub, host: true, v: PROTOCOL_VERSION },
       {
         onStatus: (status, detail) => {
           this.set({ status, error: status === 'connected' ? null : (detail ?? this.snapshot.error) });
@@ -198,7 +254,8 @@ export class HostSession {
     this.refreshPlayers(lobby);
     this.set({ lobby });
     this.broadcastLobby();
-    for (const id of arrived) void this.sendState(id);
+    // Everyone gets a fresh state: who is here also decides who we are waiting for.
+    this.broadcastStates();
     this.tick();
   }
 
@@ -242,6 +299,7 @@ export class HostSession {
       view: viewFor(match, seat === null ? [] : [seat]),
       seat,
       seats: seatInfos(lobby, this.isOffline),
+      ready: this.readyFlags(),
     };
     const sealed = await seal(key, state);
     if (this.snapshot.match !== match) return; // superseded while encrypting
@@ -272,10 +330,16 @@ export class HostSession {
       return; // not from the holder of that seat's key
     }
     const match = this.snapshot.match;
-    if (!match || action.type !== 'move') return;
+    if (!match) return;
     const seat = this.seatOf(msg.from);
+    if (action.type === 'ready') {
+      if (seat !== null && action.handNumber === match.handNumber && match.hand.history.length === 0) this.markReady(seat);
+      return;
+    }
+    if (action.type !== 'move') return;
     if (
       seat === null ||
+      !this.gateOpen() ||
       match.phase !== 'playing' ||
       match.hand.turn !== seat ||
       action.handNumber !== match.handNumber ||
@@ -308,11 +372,13 @@ export class HostSession {
     this.aiTimer = null;
     const token = ++this.aiToken;
     const { match, lobby } = this.snapshot;
-    if (this.closed || !match || match.phase !== 'playing') return;
+    if (this.closed || !match || match.phase !== 'playing' || !this.gateOpen()) return;
     const seat = match.hand.turn;
     const s = lobby.seats[seat]!;
     let level: AiLevel;
-    let delay = match.hand.history.length === 0 ? AI_DELAY_DEAL_MS : AI_DELAY_MS;
+    let delay: number = AI_DELAY_MS[this.speed];
+    // First card of a hand: never before the deal animation has had time to finish.
+    if (match.hand.history.length === 0) delay = Math.max(delay, DEAL_MS[this.speed] - (Date.now() - this.handStartedAt));
     if (s.kind === 'ai') level = s.level;
     else if (this.isOffline(s.id)) {
       level = 'medio';
@@ -358,6 +424,7 @@ export class HostSession {
     const lobby = this.cloneLobby();
     lobby.started = true;
     lobby.gameId = Date.now();
+    this.handStartedAt = Date.now();
     this.set({ lobby, match: createMatch(lobby.rules, randomSeed()), thinking: null });
     this.broadcastLobby();
     this.broadcastStates();
@@ -367,13 +434,20 @@ export class HostSession {
   /** The host's own move. */
   play(move: Move): void {
     const { match, mySeat } = this.snapshot;
-    if (!match || mySeat === null || match.phase !== 'playing' || match.hand.turn !== mySeat) return;
+    if (!match || mySeat === null || match.phase !== 'playing' || match.hand.turn !== mySeat || !this.gateOpen()) return;
     this.applyMove(move);
+  }
+
+  /** The host presses Ready at the start of a hand. */
+  readyUp(): void {
+    const { match, mySeat } = this.snapshot;
+    if (match && mySeat !== null && match.phase === 'playing' && match.hand.history.length === 0) this.markReady(mySeat);
   }
 
   nextHand(): void {
     const match = this.snapshot.match;
     if (!match || match.phase !== 'handEnd') return;
+    this.handStartedAt = Date.now();
     this.set({ match: nextHand(match), thinking: null });
     this.broadcastStates();
     this.tick();

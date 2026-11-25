@@ -30,10 +30,14 @@ export interface GuestState {
   view: MatchState;
   seat: Seat | null;
   seats: SeatInfo[];
+  /** Start of a hand: which seats have pressed Ready (computer and absent seats count as ready). */
+  ready: boolean[];
 }
 
 /** guest -> host, encrypted. */
-export type GuestAction = { type: 'move'; move: Move; handNumber: number; n: number };
+export type GuestAction =
+  | { type: 'move'; move: Move; handNumber: number; n: number }
+  | { type: 'ready'; handNumber: number };
 
 export interface StateMsg extends Sealed {
   to: string;

@@ -10,7 +10,12 @@ export interface PresenceMeta {
   name: string;
   pub: JsonWebKey;
   host: boolean;
+  /** Protocol version of the app on that device (absent on versions before the Ready gate). */
+  v?: number;
 }
+
+/** 2 = knows the start-of-hand Ready gate. */
+export const PROTOCOL_VERSION = 2;
 
 export type TransportStatus = 'connecting' | 'connected' | 'disconnected';
 

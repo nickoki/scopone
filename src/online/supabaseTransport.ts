@@ -109,7 +109,7 @@ export class SupabaseTransport implements Transport {
       const peers = new Map<string, PresenceMeta>();
       for (const entries of Object.values(state)) {
         for (const e of entries) {
-          if (e && typeof e.id === 'string' && e.pub) peers.set(e.id, { id: e.id, name: e.name, pub: e.pub, host: e.host });
+          if (e && typeof e.id === 'string' && e.pub) peers.set(e.id, { id: e.id, name: e.name, pub: e.pub, host: e.host, v: typeof e.v === 'number' ? e.v : undefined });
         }
       }
       handlers.onPresence([...peers.values()]);

@@ -7,10 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { requestAiMove } from '../ai/client';
 import { nextHand, playMove, viewFor, type MatchState, type Move, type Seat } from '../engine';
 import type { Speed } from '../state/settings';
+import { readyOrder } from './ready';
 import { TIMINGS, useDisplay } from './useDisplay';
-import type { GameController, LocalGame, SeatInfo } from './types';
+import type { GameController, LocalGame, ReadyGate, SeatInfo } from './types';
 
-const THINK_DELAY: Record<Speed, number> = { normal: 650, fast: 200 };
+const THINK_DELAY: Record<Speed, number> = { slow: 1400, normal: 650, fast: 200 };
 /** Monte Carlo budget for Difficile; well under a second even on older phones. */
 const AI_BUDGET_MS = 480;
 
@@ -29,12 +30,15 @@ export function useLocalGame(
 ): GameController {
   const [match, setMatch] = useState<MatchState>(game.match);
   const [tutorial, setTutorialState] = useState(game.tutorial);
-  const humans = useMemo(() => game.seats.filter((s) => s.kind === 'human').length, [game.seats]);
+  const humanSeats = useMemo(() => game.seats.map((s) => s.kind === 'human'), [game.seats]);
+  const humans = humanSeats.filter(Boolean).length;
   const multi = humans >= 2;
 
   // Pass-and-play: the seat whose cards are currently face up (null = nobody's).
   const [revealed, setRevealed] = useState<Seat | null>(null);
   const [thinking, setThinking] = useState<Seat | null>(null);
+  // Who has pressed Ready for which hand.
+  const [readyState, setReadyState] = useState<{ hand: number; seats: Seat[] }>({ hand: 0, seats: [] });
 
   const matchRef = useRef(match);
   matchRef.current = match;
@@ -51,6 +55,14 @@ export function useLocalGame(
   const turn = match.hand.turn;
   const turnIsHuman = match.phase === 'playing' && game.seats[turn]!.kind === 'human';
 
+  // ---- start-of-hand gate: every human looks at their cards and presses Ready
+  const handStart = match.phase === 'playing' && match.hand.history.length === 0;
+  const readySeats = readyState.hand === match.handNumber ? readyState.seats : [];
+  const pendingReady = handStart ? readyOrder(humanSeats, turn).filter((s) => !readySeats.includes(s)) : [];
+  const waitingReady = pendingReady.length > 0;
+  /** The person who has to look at their cards and get ready next. */
+  const readySeat: Seat | null = waitingReady ? pendingReady[0]! : null;
+
   // Which seat is at the bottom of the screen, and whose hand is visible.
   let perspective: Seat;
   let visible: Seat[];
@@ -64,7 +76,7 @@ export function useLocalGame(
     perspective = revealed;
     visible = [revealed];
   } else {
-    perspective = firstHumanFrom(game, turn) ?? 0;
+    perspective = readySeat ?? firstHumanFrom(game, turn) ?? 0;
     visible = [];
   }
 
@@ -72,8 +84,11 @@ export function useLocalGame(
   const display = useDisplay(latest, TIMINGS[speed]);
   const settled = !display.busy && display.shown === latest;
 
-  // Pass-and-play: a different human is up -> hide the hand and ask to pass the phone.
-  const passTo: Seat | null = multi && turnIsHuman && revealed !== turn && settled ? turn : null;
+  // Pass-and-play: someone else's turn to hold the phone -> hide the hand and ask to pass it.
+  const wanted: Seat | null = waitingReady ? readySeat : turnIsHuman ? turn : null;
+  const passTo: Seat | null = multi && wanted !== null && revealed !== wanted && settled ? wanted : null;
+  const passRef = useRef(passTo);
+  passRef.current = passTo;
 
   // A new hand starts face down in pass-and-play.
   const handNumber = match.handNumber;
@@ -87,7 +102,7 @@ export function useLocalGame(
 
   // Computer players.
   useEffect(() => {
-    if (match.phase !== 'playing' || !settled) return;
+    if (match.phase !== 'playing' || !settled || waitingReady) return;
     const seat = match.hand.turn;
     const cfg = game.seats[seat]!;
     if (cfg.kind !== 'ai') return;
@@ -107,10 +122,10 @@ export function useLocalGame(
     return () => {
       cancelled = true;
     };
-  }, [match, settled, game.seats, speed]);
+  }, [match, settled, waitingReady, game.seats, speed]);
 
   const canAct =
-    settled && turnIsHuman && passTo === null && visible.includes(turn) && perspective === turn;
+    settled && !waitingReady && turnIsHuman && passTo === null && visible.includes(turn) && perspective === turn;
 
   const play = useCallback((move: Move) => {
     const m = matchRef.current;
@@ -128,9 +143,22 @@ export function useLocalGame(
   }, []);
 
   const reveal = useCallback(() => {
-    const m = matchRef.current;
-    if (m.phase === 'playing') setRevealed(m.hand.turn);
+    if (passRef.current !== null) setRevealed(passRef.current);
   }, []);
+
+  const canReady = waitingReady && settled && passTo === null && (!multi || revealed === readySeat);
+  const readyRef = useRef<Seat | null>(null);
+  readyRef.current = canReady ? readySeat : null;
+  const readyUp = useCallback(() => {
+    const seat = readyRef.current;
+    if (seat === null) return;
+    const hand = matchRef.current.handNumber;
+    setReadyState((prev) => ({ hand, seats: [...(prev.hand === hand ? prev.seats : []), seat] }));
+  }, []);
+
+  const ready: ReadyGate | null = waitingReady
+    ? { seats: humanSeats.map((human, s) => !human || readySeats.includes(s as Seat)), canReady }
+    : null;
 
   const seats: SeatInfo[] = useMemo(
     () => game.seats.map((s) => ({ name: s.name, kind: s.kind, level: s.kind === 'ai' ? s.level : undefined })),
@@ -138,6 +166,7 @@ export function useLocalGame(
   );
 
   const shown = display.shown ?? latest;
+
   return {
     view: shown,
     anim: display.anim,
@@ -156,6 +185,8 @@ export function useLocalGame(
     notice: null,
     mode: game.mode,
     spectator: humans === 0,
+    ready,
+    readyUp,
     scopa: display.scopa,
   };
 }

@@ -7,7 +7,7 @@ import type { SeatInfo } from '../game/types';
 import { KEYS, removeKey, saveJson } from '../state/storage';
 import { deriveSharedKey, seal, unseal, type Identity } from './crypto';
 import type { GuestAction, GuestState, HelloMsg, Lobby, StateMsg, ActionMsg } from './protocol';
-import type { PresenceMeta, Transport, TransportStatus } from './transport';
+import { PROTOCOL_VERSION, type PresenceMeta, type Transport, type TransportStatus } from './transport';
 
 export interface SavedGuestRoom {
   code: string;
@@ -30,6 +30,8 @@ export interface GuestSnapshot {
   view: MatchState | null;
   seat: Seat | null;
   seats: SeatInfo[];
+  /** Start of a hand: which seats are ready. */
+  ready: boolean[];
 }
 
 const HOST_WAIT_MS = 7000;
@@ -52,6 +54,7 @@ export class GuestSession {
     view: null,
     seat: null,
     seats: [],
+    ready: [true, true, true, true],
   };
   private host: PresenceMeta | null = null;
   private key: CryptoKey | null = null;
@@ -83,7 +86,7 @@ export class GuestSession {
     this.startTimers();
     this.transport.join(
       this.code,
-      { id: this.identity.id, name: this.name, pub: this.identity.pub, host: false },
+      { id: this.identity.id, name: this.name, pub: this.identity.pub, host: false, v: PROTOCOL_VERSION },
       {
         onStatus: (status, detail) => {
           this.set({ status, error: status === 'connected' ? null : (detail ?? this.snapshot.error) });
@@ -166,7 +169,13 @@ export class GuestSession {
           return;
         }
         this.gameId = state.gameId;
-        this.set({ view: state.view, seat: state.seat, seats: state.seats, phase: 'playing' });
+        this.set({
+          view: state.view,
+          seat: state.seat,
+          seats: state.seats,
+          ready: Array.isArray(state.ready) ? state.ready : [true, true, true, true],
+          phase: 'playing',
+        });
       } catch {
         /* not for us / corrupted */
       }
@@ -177,6 +186,15 @@ export class GuestSession {
     const view = this.snapshot.view;
     if (!view || !this.key) return;
     const action: GuestAction = { type: 'move', move, handNumber: view.handNumber, n: view.hand.history.length };
+    const msg: ActionMsg = { from: this.identity.id, ...(await seal(this.key, action)) };
+    this.transport.send('action', msg);
+  }
+
+  /** Tell the host we have looked at our cards and are ready to start the hand. */
+  async ready(): Promise<void> {
+    const view = this.snapshot.view;
+    if (!view || !this.key) return;
+    const action: GuestAction = { type: 'ready', handNumber: view.handNumber };
     const msg: ActionMsg = { from: this.identity.id, ...(await seal(this.key, action)) };
     this.transport.send('action', msg);
   }

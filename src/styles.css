@@ -1171,13 +1171,20 @@ p {
   left: 0;
   top: 0;
   transform-origin: center;
-  transition: transform 0.42s var(--ease), opacity 0.25s;
+  /* --move is set on .game from the game-speed setting */
+  transition: transform var(--move, 0.42s) var(--ease), opacity 0.25s;
   will-change: transform;
   pointer-events: auto;
 }
 
+/* The hand is browsed by holding and sliding: the browser must not claim the gesture. */
+.sprite.zone-hand {
+  touch-action: none;
+  cursor: pointer;
+}
+
 .sprite.fly {
-  animation: fly-in 0.46s var(--ease) backwards;
+  animation: fly-in var(--move, 0.42s) var(--ease) backwards;
 }
 
 @keyframes fly-in {
@@ -1206,7 +1213,9 @@ p {
 
 .sprite.zone-pile {
   opacity: 0;
-  transition: transform 0.42s var(--ease), opacity 0.16s 0.32s;
+  transition:
+    transform var(--move, 0.42s) var(--ease),
+    opacity 0.16s calc(var(--move, 0.42s) - 0.1s);
 }
 
 .sprite.sel .card {
@@ -2147,4 +2156,55 @@ p {
   word-break: break-word;
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* ---- start-of-hand Ready gate ---- */
+
+.ready-btn {
+  min-height: 44px;
+  padding: 6px 30px;
+  font-size: 18px;
+  animation: pop 0.3s var(--ease) both;
+}
+
+.tag.ready {
+  background: var(--olive);
+}
+
+.tag.wait {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+/* ---- "Large numbers" option: bigger last-play markers ---- */
+
+.last-action.large .la-chip {
+  font-size: 19px;
+  line-height: 26px;
+  padding: 0 4px 0 5px;
+  border-radius: 8px;
+}
+
+.last-action.large .la-arrow {
+  font-size: 15px;
+}
+
+.last-action.large .la-scopa {
+  font-size: 15px;
+}
+
+.game.large-text .seat-badge {
+  font-size: 13.5px;
+}
+
+.game.large-text .seat-meta b {
+  font-size: 13px;
+}
+
+.game.large-text .me-col .status {
+  font-size: 15px;
+}
+
+.game.large-text .pile-count {
+  font-size: 20px;
 }

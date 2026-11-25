@@ -32,6 +32,13 @@ export interface SeatInfo {
   away?: boolean;
 }
 
+export interface ReadyGate {
+  /** Per seat: ready (computer seats always are). */
+  seats: boolean[];
+  /** The seat at the bottom of this screen can press Ready now. */
+  canReady: boolean;
+}
+
 /** Everything the game screen needs, whatever the mode. */
 export interface GameController {
   /** The state being displayed (may lag the real state while animating). Hands are masked. */
@@ -60,6 +67,12 @@ export interface GameController {
   mode: LocalMode | 'online';
   /** True when the local device has no seat (watching). */
   spectator: boolean;
+  /**
+   * Start-of-hand gate: after the deal nobody plays until every human has
+   * pressed Ready. Null once play is under way.
+   */
+  ready: ReadyGate | null;
+  readyUp: () => void;
   /** Last scopa shown (drives the banner); `key` changes for every new one. */
   scopa: { seat: number; key: number } | null;
 }
