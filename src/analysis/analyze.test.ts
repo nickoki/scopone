@@ -363,6 +363,18 @@ describe('cross-fitted loss', () => {
 });
 
 describe('scoring', () => {
+  it('a gap of exactly the allowance is exactly nothing', () => {
+    // Two exact averages over 150 deals that differ by 12/150 = 0.08: in floating point the gap comes out a
+    // crumb above 0.08, which must not turn a best move into a "good" one.
+    const gap = 19 / 150 - 7 / 150;
+    expect(gap - 0.08).toBeGreaterThan(0);
+    expect(gap - 0.08).toBeLessThan(1e-12);
+    expect(creditedLoss(gap, 0)).toBe(0);
+    expect(classOf(creditedLoss(gap, 0))).toBe('best');
+    expect(creditedLoss(0.0815, 0)).toBe(0.002);
+    expect(classOf(creditedLoss(0.0815, 0))).toBe('good');
+  });
+
   it('gives the benefit of the doubt to gaps that could be noise', () => {
     expect(creditedLoss(0.07, 0)).toBe(0);
     expect(creditedLoss(0.2, 0.25)).toBe(0);

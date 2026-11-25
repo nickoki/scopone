@@ -121,7 +121,7 @@ Good to know
 npm test
 ```
 
-128 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference), the online encryption, and the move analysis (positions rebuilt exactly as the player saw them, results unchanged when the hidden cards change, verdicts on clear-cut positions, the match-deciding guard, the scoring arithmetic) and how reviews are stored (several games side by side, size limits, damaged data).
+129 unit tests cover: capture rules (including rank-match-first and mandatory capture), every scoring category and its tie, Napola run lengths 3–10, primiera values and ties, the last-card scopa toggle, the end-of-game rules (target reached, both past the target, exact tie), dealing, turn order, player views, the AI levels (legal play, no peeking, card tracking, inference), the online encryption, and the move analysis (positions rebuilt exactly as the player saw them, results unchanged when the hidden cards change, verdicts on clear-cut positions, the match-deciding guard, the scoring arithmetic) and how reviews are stored (several games side by side, size limits, damaged data).
 
 ```bash
 npm run simulate                       # 1,000 games per matchup

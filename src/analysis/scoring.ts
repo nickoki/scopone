@@ -69,7 +69,10 @@ export const BRILLIANT_MARGIN = 0.5;
  * so two almost identical measurements never get very different verdicts.
  */
 export function creditedLoss(loss: number, se: number): number {
-  return Math.max(0, loss - Math.max(NOISE_FLOOR, se));
+  // To a thousandth of a point, so that a gap of exactly the allowance is exactly nothing (and not a
+  // floating-point crumb that would make a best move merely "good").
+  const credited = Math.round((loss - Math.max(NOISE_FLOOR, se)) * 1000) / 1000;
+  return credited > 0 ? credited : 0;
 }
 
 /**

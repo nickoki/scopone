@@ -227,7 +227,7 @@ The figure in the verdict ("about −1.4 points on average") is the gap as measu
 
 ## What was verified, and how
 
-- `npm test`: 128 unit tests pass.
+- `npm test`: 129 unit tests pass.
 - `npm run simulate`: results above; zero rule violations or crashes.
 - `npm run build`: passes with no TypeScript errors.
 - Headless Chromium (Playwright, iPhone-sized viewports 390×844 and 375×667) against the dev server and the production build: full local games to hand end and match end, tutorial, multiple-capture selection, pass-and-play, settings, rules and glossary, Italian and English device languages, resume after reload, **service worker offline** (reload and play against Difficile with the network off), and the online flow described above between tabs.

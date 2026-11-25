@@ -190,7 +190,7 @@ function MoveDetail({ m, k, n, name, usThem, names, t, lang }: { m: MoveReview; 
   const label = moveLabel(m, t);
   // The gap as measured (the same number as in the list of moves below). What is held against the player
   // can be less: the benefit of the doubt, and the limits explained in the notes under the reasons.
-  const charged = m.cls !== 'forced' && m.credited > 0;
+  const charged = m.cls !== 'forced' && m.cls !== 'best' && m.cls !== 'brilliant';
   const shownLoss = Math.max(-played.delta, m.credited);
   return (
     <article className="rv-detail">

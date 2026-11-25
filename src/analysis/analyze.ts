@@ -328,8 +328,9 @@ export function analysePosition(
   // showable reasons can account for.
   const candidates = credited > 0 ? candidatesFor(options[playedPos]!, options[0]!, decided) : [];
   const limited = limitedLoss(credited, explainedLimit(candidates));
-  // Worth telling the player only when it changes the mark (a blunder limited to a slightly smaller blunder is not).
-  const capped = accuracyOf(limited) - accuracyOf(credited) >= 5;
+  // Worth telling the player only when it changes the mark or the label (a blunder limited to a slightly
+  // smaller blunder is not).
+  const capped = classOf(limited) !== classOf(credited) || accuracyOf(limited) - accuracyOf(credited) >= 5;
   credited = limited;
   let reasons = credited > 0 ? reasonsFrom(candidates, options[playedPos]!, options[0]!, credited) : [];
   let cls = classOf(credited);
